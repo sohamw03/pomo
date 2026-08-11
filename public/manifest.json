@@ -1,0 +1,16 @@
+{
+  "name": "Pomo",
+  "short_name": "Pomo",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#151413",
+  "theme_color": "#f97316",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
