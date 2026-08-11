@@ -125,7 +125,13 @@ export default function App() {
   const strokeDashoffset = circumference - progressPercent * circumference;
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#151413] text-stone-900 dark:text-stone-100 flex flex-col items-center p-4 font-sans selection:bg-orange-200">
+    <div 
+      className="min-h-screen bg-stone-50 dark:bg-[#151413] text-stone-900 dark:text-stone-100 flex flex-col items-center px-4 font-sans selection:bg-orange-200"
+      style={{
+        paddingTop: 'max(1rem, env(safe-area-inset-top))',
+        paddingBottom: 'max(1rem, env(safe-area-inset-bottom))'
+      }}
+    >
       
       {/* Top Bar */}
       <div className="w-full max-w-md flex justify-between items-center shrink-0 pt-4 px-4">
