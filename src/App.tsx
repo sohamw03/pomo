@@ -86,14 +86,25 @@ function useWakeLock(isActive: boolean) {
   const wakeLockRef = useRef<any>(null);
 
   const requestWakeLock = useCallback(async () => {
-    if ('wakeLock' in navigator) {
+    if ('wakeLock' in navigator && document.visibilityState === 'visible') {
       try {
+        if (wakeLockRef.current) {
+           await wakeLockRef.current.release().catch(() => {});
+        }
         wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        
+        wakeLockRef.current.addEventListener('release', () => {
+          // Re-acquire if it was released but we are still active and visible
+          if (isActive && document.visibilityState === 'visible') {
+             // Use timeout to prevent rapid looping if it repeatedly fails
+             setTimeout(() => requestWakeLock(), 200);
+          }
+        });
       } catch (err: any) {
         console.error(`${err.name}, ${err.message}`);
       }
     }
-  }, []);
+  }, [isActive]);
 
   const releaseWakeLock = useCallback(async () => {
     if (wakeLockRef.current !== null) {
@@ -116,7 +127,10 @@ function useWakeLock(isActive: boolean) {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && isActive) {
-        requestWakeLock();
+        // slight delay to ensure document is fully in focus and allowed to request lock
+        setTimeout(() => {
+          requestWakeLock();
+        }, 100);
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -131,7 +145,10 @@ export default function App() {
     const saved = localStorage.getItem('pomo_preset');
     return (saved as Preset) || '25/5';
   });
-  const [mode, setMode] = useState<Mode>('work');
+  const [mode, setMode] = useState<Mode>(() => {
+    const saved = localStorage.getItem('pomo_mode');
+    return (saved as Mode) || 'work';
+  });
   const [customWork, setCustomWork] = useState<number | ''>(() => {
     const saved = localStorage.getItem('pomo_customWork');
     return saved ? parseInt(saved, 10) : 25;
@@ -144,6 +161,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('pomo_preset', preset);
   }, [preset]);
+
+  useEffect(() => {
+    localStorage.setItem('pomo_mode', mode);
+  }, [mode]);
 
   useEffect(() => {
     if (typeof customWork === 'number') {
