@@ -171,15 +171,26 @@ export default function App() {
   
   const currentDuration = mode === 'work' ? workDuration * 60 : breakDuration * 60;
   
-  const handleComplete = useCallback(() => {
-    setMode(m => {
-      const nextMode = m === 'work' ? 'break' : 'work';
-      playAlarm(nextMode);
-      return nextMode;
-    });
+  const handleComplete = useCallback((isSkip?: boolean) => {
+    if (isSkip) {
+      setMode(m => m === 'work' ? 'break' : 'work');
+    } else {
+      setMode(m => {
+        const nextMode = m === 'work' ? 'break' : 'work';
+        playAlarm(nextMode);
+        setTimeout(() => {
+          setMode(currentM => {
+            // Only switch if we haven't already manually changed the mode via skip
+            if (currentM === m) return nextMode;
+            return currentM;
+          });
+        }, 2500); // 2.5 second delay before switching visually and starting next
+        return m; // keep current mode during the delay
+      });
+    }
   }, []);
 
-  const { timeLeft, isActive, toggleTimer, resetTimer, skipTimer } = useTimer(currentDuration, handleComplete);
+  const { timeLeft, isActive, toggleTimer, resetTimer, skipTimer } = useTimer(currentDuration, mode, handleComplete);
   
   useWakeLock(isActive);
 

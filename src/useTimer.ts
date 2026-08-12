@@ -1,16 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-export function useTimer(initialSeconds: number, onComplete: () => void) {
+export function useTimer(initialSeconds: number, modeKey: string, onComplete: (isSkip?: boolean) => void) {
   const [timeLeft, setTimeLeft] = useState(initialSeconds);
   const [isActive, setIsActive] = useState(false);
   const endTimeRef = useRef<number | null>(null);
 
   const prevInitialSecondsRef = useRef(initialSeconds);
+  const prevModeKeyRef = useRef(modeKey);
 
-  // Handle changes to initialSeconds (e.g. mode switch or preset change)
+  // Handle changes to initialSeconds or mode (e.g. mode switch or preset change)
   useEffect(() => {
-    if (prevInitialSecondsRef.current !== initialSeconds) {
+    if (prevInitialSecondsRef.current !== initialSeconds || prevModeKeyRef.current !== modeKey) {
       prevInitialSecondsRef.current = initialSeconds;
+      prevModeKeyRef.current = modeKey;
       setTimeLeft(initialSeconds);
       if (isActive) {
         // If timer is running, seamlessly start the new countdown
@@ -19,7 +21,7 @@ export function useTimer(initialSeconds: number, onComplete: () => void) {
         endTimeRef.current = null;
       }
     }
-  }, [initialSeconds, isActive]);
+  }, [initialSeconds, modeKey, isActive]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -39,7 +41,7 @@ export function useTimer(initialSeconds: number, onComplete: () => void) {
           // Pause the tick processing for this interval to prevent horror-movie looping
           endTimeRef.current = null;
           setTimeLeft(0);
-          onComplete(); // Triggers mode switch, which updates initialSeconds and seamlessly starts next timer
+          onComplete(false); // Triggers mode switch, which updates initialSeconds/modeKey and seamlessly starts next timer
         } else {
           setTimeLeft(remaining);
         }
@@ -66,7 +68,7 @@ export function useTimer(initialSeconds: number, onComplete: () => void) {
     setIsActive(true);
     endTimeRef.current = null;
     setTimeLeft(0);
-    onComplete();
+    onComplete(true);
   }, [onComplete]);
 
   return { timeLeft, isActive, toggleTimer, resetTimer, skipTimer };
