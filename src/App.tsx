@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Play, Pause, RotateCcw, Settings2, SkipForward } from 'lucide-react';
 import { useTimer } from './useTimer';
 
@@ -7,7 +7,7 @@ type Mode = 'work' | 'break';
 
 const beepAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
 
-function playAlarm() {
+function playAlarm(nextMode: 'work' | 'break') {
   if (beepAudioContext.state === 'suspended') {
     beepAudioContext.resume();
   }
@@ -34,17 +34,137 @@ function playAlarm() {
 
   const now = beepAudioContext.currentTime;
   
-  // A harmonious, gentle double-chime (G5 -> C6)
-  playNote(783.99, now, 1.5, 0.5); 
-  playNote(1046.50, now + 0.2, 2.0, 0.5);
+  if (nextMode === 'break') {
+    // A harmonious, gentle ascending double-chime (G5 -> C6)
+    playNote(783.99, now, 1.5, 0.5); 
+    playNote(1046.50, now + 0.2, 2.0, 0.5);
+  } else {
+    // A crisp, alert repeating bell (A5, A5)
+    playNote(880.00, now, 1.2, 0.4);
+    playNote(880.00, now + 0.15, 1.5, 0.4);
+  }
+}
+
+function useAutoRepeat(action: () => void, delay = 400, interval = 100) {
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const actionRef = useRef(action);
+  
+  useEffect(() => {
+    actionRef.current = action;
+  }, [action]);
+
+  const start = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    actionRef.current(); 
+    timeoutRef.current = setTimeout(() => {
+      intervalRef.current = setInterval(() => {
+        actionRef.current();
+      }, interval);
+    }, delay);
+  }, [delay, interval]);
+
+  const stop = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+  }, []);
+
+  useEffect(() => {
+    return stop;
+  }, [stop]);
+
+  return {
+    onPointerDown: start,
+    onPointerUp: stop,
+    onPointerLeave: stop,
+    onPointerCancel: stop,
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault()
+  };
+}
+
+function useWakeLock(isActive: boolean) {
+  const wakeLockRef = useRef<any>(null);
+
+  const requestWakeLock = useCallback(async () => {
+    if ('wakeLock' in navigator) {
+      try {
+        wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+      } catch (err: any) {
+        console.error(`${err.name}, ${err.message}`);
+      }
+    }
+  }, []);
+
+  const releaseWakeLock = useCallback(async () => {
+    if (wakeLockRef.current !== null) {
+      await wakeLockRef.current.release().catch(() => {});
+      wakeLockRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isActive) {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+    return () => {
+      releaseWakeLock();
+    };
+  }, [isActive, requestWakeLock, releaseWakeLock]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isActive) {
+        requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isActive, requestWakeLock]);
 }
 
 export default function App() {
-  const [preset, setPreset] = useState<Preset>('25/5');
+  const [preset, setPreset] = useState<Preset>(() => {
+    const saved = localStorage.getItem('pomo_preset');
+    return (saved as Preset) || '25/5';
+  });
   const [mode, setMode] = useState<Mode>('work');
-  const [customWork, setCustomWork] = useState<number | ''>(25);
-  const [customBreak, setCustomBreak] = useState<number | ''>(5);
+  const [customWork, setCustomWork] = useState<number | ''>(() => {
+    const saved = localStorage.getItem('pomo_customWork');
+    return saved ? parseInt(saved, 10) : 25;
+  });
+  const [customBreak, setCustomBreak] = useState<number | ''>(() => {
+    const saved = localStorage.getItem('pomo_customBreak');
+    return saved ? parseInt(saved, 10) : 5;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('pomo_preset', preset);
+  }, [preset]);
+
+  useEffect(() => {
+    if (typeof customWork === 'number') {
+      localStorage.setItem('pomo_customWork', customWork.toString());
+    }
+  }, [customWork]);
+
+  useEffect(() => {
+    if (typeof customBreak === 'number') {
+      localStorage.setItem('pomo_customBreak', customBreak.toString());
+    }
+  }, [customBreak]);
+
   const [isPlayPressed, setIsPlayPressed] = useState(false);
+  const [isResetPressed, setIsResetPressed] = useState(false);
+  const [isSkipPressed, setIsSkipPressed] = useState(false);
+
+  const workDecRepeat = useAutoRepeat(() => adjustCustom('work', -1));
+  const workIncRepeat = useAutoRepeat(() => adjustCustom('work', 1));
+  const breakDecRepeat = useAutoRepeat(() => adjustCustom('break', -1));
+  const breakIncRepeat = useAutoRepeat(() => adjustCustom('break', 1));
   
   const workDuration = preset === '25/5' ? 25 : preset === '50/10' ? 50 : (typeof customWork === 'number' ? customWork : 1);
   const breakDuration = preset === '25/5' ? 5 : preset === '50/10' ? 10 : (typeof customBreak === 'number' ? customBreak : 1);
@@ -52,12 +172,17 @@ export default function App() {
   const currentDuration = mode === 'work' ? workDuration * 60 : breakDuration * 60;
   
   const handleComplete = useCallback(() => {
-    playAlarm();
-    setMode(m => m === 'work' ? 'break' : 'work');
+    setMode(m => {
+      const nextMode = m === 'work' ? 'break' : 'work';
+      playAlarm(nextMode);
+      return nextMode;
+    });
   }, []);
 
   const { timeLeft, isActive, toggleTimer, resetTimer, skipTimer } = useTimer(currentDuration, handleComplete);
   
+  useWakeLock(isActive);
+
   // Format time
   const mins = Math.floor(timeLeft / 60);
   const secs = timeLeft % 60;
@@ -126,7 +251,7 @@ export default function App() {
 
   return (
     <div 
-      className="min-h-screen bg-stone-50 dark:bg-[#151413] text-stone-900 dark:text-stone-100 flex flex-col items-center px-4 font-sans selection:bg-orange-200"
+      className="min-h-screen bg-stone-50 dark:bg-[#151413] text-stone-900 dark:text-stone-100 flex flex-col items-center px-4 font-sans selection:bg-orange-200 select-none"
       style={{
         paddingTop: 'max(1rem, env(safe-area-inset-top))',
         paddingBottom: 'max(1rem, env(safe-area-inset-bottom))'
@@ -191,8 +316,8 @@ export default function App() {
             className={primaryColor}
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center translate-y-1">
-            <span className="text-[5rem] font-light tracking-tighter tabular-nums leading-none text-stone-800 dark:text-stone-100">
+        <div className="absolute inset-0 flex flex-col items-center justify-center translate-y-3">
+            <span className="text-[4.75rem] font-light tracking-tighter tabular-nums leading-none text-stone-800 dark:text-stone-100">
                 {timeString}
             </span>
             <span className="text-stone-500 dark:text-stone-400 font-medium mt-2 tracking-widest uppercase text-xs">
@@ -205,7 +330,11 @@ export default function App() {
       <div className="flex items-center justify-center gap-8 shrink-0">
         <button 
           onClick={resetTimer}
-          className="w-14 h-14 rounded-full flex items-center justify-center bg-stone-200/60 text-stone-700 hover:bg-stone-300 dark:bg-stone-800/60 dark:text-stone-300 dark:hover:bg-stone-700 transition-colors shadow-sm"
+          onPointerDown={() => setIsResetPressed(true)}
+          onPointerUp={() => setIsResetPressed(false)}
+          onPointerLeave={() => setIsResetPressed(false)}
+          onPointerCancel={() => setIsResetPressed(false)}
+          className={`w-14 h-14 rounded-full flex items-center justify-center bg-stone-200/60 text-stone-700 dark:bg-stone-800/60 dark:text-stone-300 transition-transform duration-150 ease-out shadow-sm ${isResetPressed ? 'scale-90' : 'hover:scale-105 scale-100 hover:bg-stone-300 dark:hover:bg-stone-700'}`}
           aria-label="Reset Timer"
         >
             <RotateCcw size={22} />
@@ -225,7 +354,11 @@ export default function App() {
 
         <button 
           onClick={skipTimer}
-          className="w-14 h-14 rounded-full flex items-center justify-center bg-stone-200/60 text-stone-700 hover:bg-stone-300 dark:bg-stone-800/60 dark:text-stone-300 dark:hover:bg-stone-700 transition-colors shadow-sm"
+          onPointerDown={() => setIsSkipPressed(true)}
+          onPointerUp={() => setIsSkipPressed(false)}
+          onPointerLeave={() => setIsSkipPressed(false)}
+          onPointerCancel={() => setIsSkipPressed(false)}
+          className={`w-14 h-14 rounded-full flex items-center justify-center bg-stone-200/60 text-stone-700 dark:bg-stone-800/60 dark:text-stone-300 transition-transform duration-150 ease-out shadow-sm ${isSkipPressed ? 'scale-90' : 'hover:scale-105 scale-100 hover:bg-stone-300 dark:hover:bg-stone-700'}`}
           aria-label="Skip Phase"
         >
             <SkipForward size={22} />
@@ -266,7 +399,7 @@ export default function App() {
             <div className="flex flex-col items-center w-1/2">
                 <label className="text-[11px] font-bold text-stone-500 dark:text-stone-400 uppercase tracking-widest mb-3">Work (m)</label>
                 <div className="flex items-center gap-3">
-                    <button onClick={() => adjustCustom('work', -1)} className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors">-</button>
+                    <button {...workDecRepeat} className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors">-</button>
                     <input 
                         type="text" 
                         inputMode="numeric" 
@@ -283,9 +416,9 @@ export default function App() {
                         onBlur={() => {
                             if (customWork === '' || customWork < 1) setCustomWork(1);
                         }}
-                        className="w-12 text-center text-xl font-medium tabular-nums bg-transparent border-b-2 border-transparent focus:border-orange-400 dark:focus:border-orange-500 outline-none transition-colors"
+                        className="w-12 text-center text-xl font-medium tabular-nums bg-transparent border-b-2 border-transparent focus:border-orange-400 dark:focus:border-orange-500 outline-none transition-colors select-text"
                     />
-                    <button onClick={() => adjustCustom('work', 1)} className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors">+</button>
+                    <button {...workIncRepeat} className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors">+</button>
                 </div>
             </div>
             
@@ -295,7 +428,7 @@ export default function App() {
             <div className="flex flex-col items-center w-1/2">
                 <label className="text-[11px] font-bold text-stone-500 dark:text-stone-400 uppercase tracking-widest mb-3">Break (m)</label>
                 <div className="flex items-center gap-3">
-                    <button onClick={() => adjustCustom('break', -1)} className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors">-</button>
+                    <button {...breakDecRepeat} className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors">-</button>
                     <input 
                         type="text" 
                         inputMode="numeric" 
@@ -312,9 +445,9 @@ export default function App() {
                         onBlur={() => {
                             if (customBreak === '' || customBreak < 1) setCustomBreak(1);
                         }}
-                        className="w-12 text-center text-xl font-medium tabular-nums bg-transparent border-b-2 border-transparent focus:border-orange-400 dark:focus:border-orange-500 outline-none transition-colors"
+                        className="w-12 text-center text-xl font-medium tabular-nums bg-transparent border-b-2 border-transparent focus:border-orange-400 dark:focus:border-orange-500 outline-none transition-colors select-text"
                     />
-                    <button onClick={() => adjustCustom('break', 1)} className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors">+</button>
+                    <button {...breakIncRepeat} className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors">+</button>
                 </div>
             </div>
 

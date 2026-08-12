@@ -5,10 +5,15 @@ export function useTimer(initialSeconds: number, onComplete: () => void) {
   const [isActive, setIsActive] = useState(false);
   const endTimeRef = useRef<number | null>(null);
 
-  // Reset time left when initialSeconds changes, but only if the timer is not actively running.
+  const prevInitialSecondsRef = useRef(initialSeconds);
+
+  // Reset time left when initialSeconds changes (e.g. changing preset), but only if the timer is not actively running.
   useEffect(() => {
-    if (!isActive) {
-      setTimeLeft(initialSeconds);
+    if (prevInitialSecondsRef.current !== initialSeconds) {
+      prevInitialSecondsRef.current = initialSeconds;
+      if (!isActive) {
+        setTimeLeft(initialSeconds);
+      }
     }
   }, [initialSeconds, isActive]);
 
