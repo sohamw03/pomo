@@ -251,7 +251,7 @@ export default function App() {
 
   return (
     <div 
-      className="min-h-screen bg-stone-50 dark:bg-[#151413] text-stone-900 dark:text-stone-100 flex flex-col items-center px-4 font-sans selection:bg-orange-200 select-none"
+      className="fixed inset-0 overflow-x-hidden overflow-y-auto bg-stone-50 dark:bg-[#151413] text-stone-900 dark:text-stone-100 flex flex-col items-center px-4 font-sans selection:bg-orange-200 select-none"
       style={{
         paddingTop: 'max(1rem, env(safe-area-inset-top))',
         paddingBottom: 'max(1rem, env(safe-area-inset-bottom))'
