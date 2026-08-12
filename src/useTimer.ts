@@ -7,12 +7,16 @@ export function useTimer(initialSeconds: number, onComplete: () => void) {
 
   const prevInitialSecondsRef = useRef(initialSeconds);
 
-  // Reset time left when initialSeconds changes (e.g. changing preset), but only if the timer is not actively running.
+  // Handle changes to initialSeconds (e.g. mode switch or preset change)
   useEffect(() => {
     if (prevInitialSecondsRef.current !== initialSeconds) {
       prevInitialSecondsRef.current = initialSeconds;
-      if (!isActive) {
-        setTimeLeft(initialSeconds);
+      setTimeLeft(initialSeconds);
+      if (isActive) {
+        // If timer is running, seamlessly start the new countdown
+        endTimeRef.current = Date.now() + initialSeconds * 1000;
+      } else {
+        endTimeRef.current = null;
       }
     }
   }, [initialSeconds, isActive]);
@@ -26,14 +30,16 @@ export function useTimer(initialSeconds: number, onComplete: () => void) {
       }
       
       interval = setInterval(() => {
+        if (endTimeRef.current === null) return;
+        
         const now = Date.now();
-        const remaining = Math.round((endTimeRef.current! - now) / 1000);
+        const remaining = Math.round((endTimeRef.current - now) / 1000);
         
         if (remaining <= 0) {
-          setTimeLeft(0);
-          setIsActive(false);
+          // Pause the tick processing for this interval to prevent horror-movie looping
           endTimeRef.current = null;
-          onComplete();
+          setTimeLeft(0);
+          onComplete(); // Triggers mode switch, which updates initialSeconds and seamlessly starts next timer
         } else {
           setTimeLeft(remaining);
         }
@@ -45,7 +51,7 @@ export function useTimer(initialSeconds: number, onComplete: () => void) {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isActive, onComplete]); // Intentionally omitting timeLeft so it doesn't re-trigger the effect
+  }, [isActive, onComplete]); // omitted timeLeft to avoid clearing interval every tick
 
   const toggleTimer = useCallback(() => setIsActive((active) => !active), []);
   
@@ -56,9 +62,10 @@ export function useTimer(initialSeconds: number, onComplete: () => void) {
   }, [initialSeconds]);
   
   const skipTimer = useCallback(() => {
-    setIsActive(false);
-    setTimeLeft(0);
+    // Force active so it automatically starts the next phase when skipped
+    setIsActive(true);
     endTimeRef.current = null;
+    setTimeLeft(0);
     onComplete();
   }, [onComplete]);
 
