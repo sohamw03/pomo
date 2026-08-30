@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Play, Pause, RotateCcw, Settings2, SkipForward } from 'lucide-react';
 import { motion } from 'motion/react';
+import '@material/web/ripple/ripple.js';
 import { useTimer } from './useTimer';
 
 type Preset = '25/5' | '50/10' | 'custom';
@@ -146,7 +147,32 @@ function useWakeLock(isActive: boolean) {
   }, [isActive, requestWakeLock]);
 }
 
-const buttonSpring = { type: "spring" as const, stiffness: 950, damping: 30, mass: 0.8 };
+type RippleMotionButtonProps = React.ComponentPropsWithoutRef<typeof motion.button>;
+
+function RippleMotionButton({ children, className, disabled, ...props }: RippleMotionButtonProps) {
+  return (
+    <motion.button
+      {...props}
+      disabled={disabled}
+      className={'relative overflow-hidden ' + (className ?? '')}
+      onContextMenu={(event) => {
+        props.onContextMenu?.(event);
+        event.preventDefault();
+      }}
+    >
+      {React.createElement('md-ripple', {
+        'aria-hidden': true,
+        disabled: Boolean(disabled),
+        style: {
+          '--md-ripple-hover-color': 'currentColor',
+          '--md-ripple-pressed-color': 'currentColor',
+        } as React.CSSProperties,
+      })}
+      {children}
+    </motion.button>
+  );
+}
+
 
 export default function App() {
   const [preset, setPreset] = useState<Preset>(() => {
@@ -331,20 +357,25 @@ export default function App() {
 
   // M3 Theme Colors
   const isWork = mode === 'work';
-  const primaryColor = isWork ? 'text-orange-500 dark:text-orange-400' : 'text-amber-500 dark:text-amber-400';
-  const primaryBg = isWork ? 'bg-orange-500 hover:bg-orange-600 dark:bg-orange-500 dark:hover:bg-orange-600' : 'bg-amber-500 hover:bg-amber-600 dark:bg-amber-500 dark:hover:bg-amber-600';
-  const primaryContainer = isWork ? 'bg-orange-100 text-orange-900 dark:bg-orange-900/50 dark:text-orange-100' : 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100';
+  const primaryRingColor = isWork ? 'text-[#ffdcc2] dark:text-[#6a3900]' : 'text-[#f9e287] dark:text-[#534600]';
+  const primaryBg = isWork ? 'bg-[#ffdcc2] dark:bg-[#6a3900]' : 'bg-[#f9e287] dark:bg-[#534600]';
+  const primaryContainer = isWork ? 'bg-[#ffdcc2] text-[#2d1600] dark:bg-[#6a3900] dark:text-[#ffdcc2]' : 'bg-[#f9e287] text-[#221b00] dark:bg-[#534600] dark:text-[#f9e287]';
+  const primaryOnColor = isWork ? 'text-[#2d1600] dark:text-[#ffdcc2]' : 'text-[#221b00] dark:text-[#f9e287]';
+  const primaryFocus = isWork ? 'focus:border-[#c47732] dark:focus:border-[#ffb77d]' : 'focus:border-[#c6a900] dark:focus:border-[#e9c400]';
 
   const progressPercent = timeLeft / currentDuration;
-  const radius = 135;
-  const stroke = 12;
+  const radius = 180;
+  const stroke = 14;
   const normalizedRadius = radius - stroke * 2;
   const circumference = normalizedRadius * 2 * Math.PI;
   const strokeDashoffset = circumference - progressPercent * circumference;
+  const nubAngle = progressPercent * Math.PI * 2;
+  const nubX = radius + normalizedRadius * Math.cos(nubAngle);
+  const nubY = radius + normalizedRadius * Math.sin(nubAngle);
 
   return (
     <div 
-      className="fixed inset-0 overflow-x-hidden overflow-y-auto bg-stone-50 dark:bg-[#151413] text-stone-900 dark:text-stone-100 flex flex-col items-center px-4 font-sans selection:bg-orange-200 select-none"
+      className="fixed inset-0 overflow-x-hidden overflow-y-auto bg-stone-50 dark:bg-[#151413] text-stone-900 dark:text-stone-100 flex flex-col items-center px-4 font-sans selection:bg-[#ffdcc2] select-none"
       style={{
         paddingTop: 'max(1rem, env(safe-area-inset-top))',
         paddingBottom: 'max(1rem, env(safe-area-inset-bottom))'
@@ -365,22 +396,18 @@ export default function App() {
           Pomo
         </h1>
         <div className="flex bg-stone-200/70 dark:bg-stone-800/70 p-1 rounded-full">
-            <motion.button 
-                whileTap={{ scale: 0.93 }}
-                transition={buttonSpring}
+            <RippleMotionButton
                 onClick={() => handleModeChange('work')}
                 className={`px-5 py-1.5 rounded-full text-sm font-semibold transition-colors cursor-pointer select-none touch-manipulation ${isWork ? primaryContainer : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
             >
                 Work
-            </motion.button>
-            <motion.button 
-                whileTap={{ scale: 0.93 }}
-                transition={buttonSpring}
+            </RippleMotionButton>
+            <RippleMotionButton
                 onClick={() => handleModeChange('break')}
                 className={`px-5 py-1.5 rounded-full text-sm font-semibold transition-colors cursor-pointer select-none touch-manipulation ${!isWork ? primaryContainer : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
             >
                 Break
-            </motion.button>
+            </RippleMotionButton>
         </div>
       </div>
 
@@ -412,10 +439,19 @@ export default function App() {
             r={normalizedRadius}
             cx={radius}
             cy={radius}
-            className={primaryColor}
+            className={primaryRingColor}
           />
+          {progressPercent > 0 && (
+            <circle
+              cx={nubX}
+              cy={nubY}
+              r={stroke / 2}
+              fill="currentColor"
+              className={`${primaryOnColor} opacity-75`}
+            />
+          )}
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center translate-y-3">
+        <div className="absolute inset-0 flex flex-col items-center justify-center translate-y-1.5">
             <span className="text-[4.75rem] font-light tracking-tighter tabular-nums leading-none text-stone-800 dark:text-stone-100">
                 {timeString}
             </span>
@@ -427,35 +463,29 @@ export default function App() {
 
       {/* Controls */}
       <div className="flex items-center justify-center gap-8 shrink-0">
-        <motion.button 
+        <RippleMotionButton
           onClick={handleReset}
-          whileTap={{ scale: 0.93 }}
-          transition={buttonSpring}
           className="w-14 h-14 rounded-full flex items-center justify-center bg-stone-200/60 text-stone-700 dark:bg-stone-800/60 dark:text-stone-300 shadow-sm hover:bg-stone-300 dark:hover:bg-stone-700 cursor-pointer select-none touch-manipulation"
           aria-label="Reset Timer"
         >
             <RotateCcw size={22} />
-        </motion.button>
+        </RippleMotionButton>
         
-        <motion.button 
+        <RippleMotionButton
           onClick={handlePlayPause}
-          whileTap={{ scale: 0.93 }}
-          transition={buttonSpring}
-          className={`w-24 h-24 rounded-full flex items-center justify-center text-white shadow-lg cursor-pointer select-none touch-manipulation hover:opacity-95 ${primaryBg}`}
+          className={`w-24 h-24 rounded-full flex items-center justify-center ${primaryOnColor} shadow-lg cursor-pointer select-none touch-manipulation hover:opacity-95 ${primaryBg}`}
           aria-label={isActive ? "Pause Timer" : "Start Timer"}
         >
           {isActive ? <Pause size={36} className="fill-current" /> : <Play size={36} className="fill-current translate-x-[2px]" />}
-        </motion.button>
+        </RippleMotionButton>
 
-        <motion.button 
+        <RippleMotionButton
           onClick={handleSkip}
-          whileTap={{ scale: 0.93 }}
-          transition={buttonSpring}
           className="w-14 h-14 rounded-full flex items-center justify-center bg-stone-200/60 text-stone-700 dark:bg-stone-800/60 dark:text-stone-300 shadow-sm hover:bg-stone-300 dark:hover:bg-stone-700 cursor-pointer select-none touch-manipulation"
           aria-label="Skip Phase"
         >
             <SkipForward size={22} />
-        </motion.button>
+        </RippleMotionButton>
       </div>
       </div>
 
@@ -492,14 +522,12 @@ export default function App() {
             <div className="flex flex-col items-center w-1/2">
                 <label className="text-[11px] font-bold text-stone-500 dark:text-stone-400 uppercase tracking-widest mb-3">Work (m)</label>
                 <div className="flex items-center gap-3">
-                    <motion.button 
+                    <RippleMotionButton
                       {...workDecRepeat} 
-                      whileTap={{ scale: 0.93 }}
-                      transition={buttonSpring}
                       className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
                     >
                       -
-                    </motion.button>
+                    </RippleMotionButton>
                     <input 
                         type="text" 
                         inputMode="numeric" 
@@ -516,16 +544,14 @@ export default function App() {
                         onBlur={() => {
                             if (customWork === '' || customWork < 1) setCustomWork(1);
                         }}
-                        className="w-12 text-center text-xl font-medium tabular-nums bg-transparent border-b-2 border-transparent focus:border-orange-400 dark:focus:border-orange-500 outline-none transition-colors select-text"
+                        className={`w-12 text-center text-xl font-medium tabular-nums bg-transparent border-b-2 border-transparent ${primaryFocus} outline-none transition-colors select-text`}
                     />
-                    <motion.button 
+                    <RippleMotionButton
                       {...workIncRepeat} 
-                      whileTap={{ scale: 0.93 }}
-                      transition={buttonSpring}
                       className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
                     >
                       +
-                    </motion.button>
+                    </RippleMotionButton>
                 </div>
             </div>
             
@@ -535,14 +561,12 @@ export default function App() {
             <div className="flex flex-col items-center w-1/2">
                 <label className="text-[11px] font-bold text-stone-500 dark:text-stone-400 uppercase tracking-widest mb-3">Break (m)</label>
                 <div className="flex items-center gap-3">
-                    <motion.button 
+                    <RippleMotionButton
                       {...breakDecRepeat} 
-                      whileTap={{ scale: 0.93 }}
-                      transition={buttonSpring}
                       className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
                     >
                       -
-                    </motion.button>
+                    </RippleMotionButton>
                     <input 
                         type="text" 
                         inputMode="numeric" 
@@ -559,16 +583,14 @@ export default function App() {
                         onBlur={() => {
                             if (customBreak === '' || customBreak < 1) setCustomBreak(1);
                         }}
-                        className="w-12 text-center text-xl font-medium tabular-nums bg-transparent border-b-2 border-transparent focus:border-orange-400 dark:focus:border-orange-500 outline-none transition-colors select-text"
+                        className={`w-12 text-center text-xl font-medium tabular-nums bg-transparent border-b-2 border-transparent ${primaryFocus} outline-none transition-colors select-text`}
                     />
-                    <motion.button 
+                    <RippleMotionButton
                       {...breakIncRepeat} 
-                      whileTap={{ scale: 0.93 }}
-                      transition={buttonSpring}
                       className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
                     >
                       +
-                    </motion.button>
+                    </RippleMotionButton>
                 </div>
             </div>
 
@@ -582,20 +604,18 @@ export default function App() {
 
 function Chip({ label, icon, selected, onClick, isWork }: { label: string, icon?: React.ReactNode, selected: boolean, onClick: () => void, isWork: boolean }) {
     const selectedClass = isWork 
-        ? 'bg-orange-100 text-orange-900 dark:bg-orange-500/20 dark:text-orange-200 border-transparent shadow-sm' 
-        : 'bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200 border-transparent shadow-sm';
+        ? 'bg-[#ffdcc2] text-[#2d1600] dark:bg-[#6a3900] dark:text-[#ffdcc2] border-transparent shadow-sm'
+        : 'bg-[#f9e287] text-[#221b00] dark:bg-[#534600] dark:text-[#f9e287] border-transparent shadow-sm';
     
     const unselectedClass = 'bg-stone-100 text-stone-600 dark:bg-stone-800/80 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 border-transparent transition-colors';
 
     return (
-        <motion.button 
-            whileTap={{ scale: 0.93 }}
-            transition={buttonSpring}
+        <RippleMotionButton
             onClick={onClick}
             className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium text-sm transition-colors cursor-pointer select-none touch-manipulation ${selected ? selectedClass : unselectedClass}`}
         >
             {icon}
             {label}
-        </motion.button>
+        </RippleMotionButton>
     );
 }
