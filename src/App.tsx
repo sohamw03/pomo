@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Play, Pause, RotateCcw, Settings2, SkipForward } from 'lucide-react';
+import { motion } from 'motion/react';
 import { useTimer } from './useTimer';
 
 type Preset = '25/5' | '50/10' | 'custom';
@@ -84,8 +85,10 @@ function useAutoRepeat(action: () => void, delay = 400, interval = 100) {
 
 function useWakeLock(isActive: boolean) {
   const wakeLockRef = useRef<any>(null);
+  const isDisallowedRef = useRef<boolean>(false);
 
   const requestWakeLock = useCallback(async () => {
+    if (isDisallowedRef.current) return;
     if ('wakeLock' in navigator && document.visibilityState === 'visible') {
       try {
         if (wakeLockRef.current) {
@@ -101,7 +104,10 @@ function useWakeLock(isActive: boolean) {
           }
         });
       } catch (err: any) {
-        console.error(`${err.name}, ${err.message}`);
+        if (err.name === 'NotAllowedError' || err.name === 'SecurityError') {
+          // Permissions policy in iframe / environment disallowed wake lock
+          isDisallowedRef.current = true;
+        }
       }
     }
   }, [isActive]);
@@ -140,6 +146,8 @@ function useWakeLock(isActive: boolean) {
   }, [isActive, requestWakeLock]);
 }
 
+const buttonSpring = { type: "spring" as const, stiffness: 950, damping: 30, mass: 0.8 };
+
 export default function App() {
   const [preset, setPreset] = useState<Preset>(() => {
     const saved = localStorage.getItem('pomo_preset');
@@ -157,6 +165,7 @@ export default function App() {
     const saved = localStorage.getItem('pomo_customBreak');
     return saved ? parseInt(saved, 10) : 5;
   });
+  const [isCustomExpanded, setIsCustomExpanded] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('pomo_preset', preset);
@@ -178,10 +187,6 @@ export default function App() {
     }
   }, [customBreak]);
 
-  const [isPlayPressed, setIsPlayPressed] = useState(false);
-  const [isResetPressed, setIsResetPressed] = useState(false);
-  const [isSkipPressed, setIsSkipPressed] = useState(false);
-
   const workDecRepeat = useAutoRepeat(() => adjustCustom('work', -1));
   const workIncRepeat = useAutoRepeat(() => adjustCustom('work', 1));
   const breakDecRepeat = useAutoRepeat(() => adjustCustom('break', -1));
@@ -191,7 +196,7 @@ export default function App() {
   const breakDuration = preset === '25/5' ? 5 : preset === '50/10' ? 10 : (typeof customBreak === 'number' ? customBreak : 1);
   
   const currentDuration = mode === 'work' ? workDuration * 60 : breakDuration * 60;
-  
+
   const handleComplete = useCallback((isSkip?: boolean) => {
     if (isSkip) {
       setMode(m => m === 'work' ? 'break' : 'work');
@@ -221,8 +226,19 @@ export default function App() {
   const timeString = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   
   const handlePresetChange = (newPreset: Preset) => {
-    setPreset(newPreset);
-    resetTimer();
+    if (newPreset === 'custom') {
+      if (preset === 'custom') {
+        setIsCustomExpanded(!isCustomExpanded);
+      } else {
+        setPreset('custom');
+        setIsCustomExpanded(true);
+        resetTimer();
+      }
+    } else {
+      setPreset(newPreset);
+      setIsCustomExpanded(false);
+      resetTimer();
+    }
   };
 
   const handleModeChange = (newMode: Mode) => {
@@ -237,34 +253,79 @@ export default function App() {
     toggleTimer();
   };
 
+  const handleReset = () => {
+    resetTimer();
+  };
+
+  const handleSkip = () => {
+    skipTimer();
+  };
+
   const adjustCustom = (type: 'work' | 'break', delta: number) => {
     if (type === 'work') {
       setCustomWork(w => Math.max(1, (typeof w === 'number' ? w : 1) + delta));
     } else {
       setCustomBreak(b => Math.max(1, (typeof b === 'number' ? b : 1) + delta));
     }
-    if (preset === 'custom') {
-      // Re-triggering reset if not active is handled by useTimer hook automatically
-      // when initialSeconds dependency updates.
+  };
+
+  // Fullscreen long-press handler for "Pomo" title
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const getIsFullscreen = () => {
+    return !!(
+      document.fullscreenElement ||
+      (document as any).webkitFullscreenElement ||
+      (document as any).mozFullScreenElement ||
+      (document as any).msFullscreenElement
+    );
+  };
+
+  const toggleFullscreenMode = async () => {
+    try {
+      const isFs = getIsFullscreen();
+      if (!isFs) {
+        const docEl = document.documentElement as any;
+        if (docEl.requestFullscreen) {
+          await docEl.requestFullscreen();
+        } else if (docEl.webkitRequestFullscreen) {
+          await docEl.webkitRequestFullscreen();
+        } else if (docEl.mozRequestFullScreen) {
+          await docEl.mozRequestFullScreen();
+        } else if (docEl.msRequestFullscreen) {
+          await docEl.msRequestFullscreen();
+        }
+      } else {
+        const doc = document as any;
+        if (doc.exitFullscreen) {
+          await doc.exitFullscreen();
+        } else if (doc.webkitExitFullscreen) {
+          await doc.webkitExitFullscreen();
+        } else if (doc.mozCancelFullScreen) {
+          await doc.mozCancelFullScreen();
+        } else if (doc.msExitFullscreen) {
+          await doc.msExitFullscreen();
+        }
+      }
+    } catch (err) {
+      console.log('Fullscreen toggle notification:', err);
     }
   };
 
-  const longPressTimeout = useRef<NodeJS.Timeout | null>(null);
-  
-  const handlePointerDown = () => {
-    longPressTimeout.current = setTimeout(() => {
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(err => console.log(err));
-      } else {
-        document.exitFullscreen();
-      }
-    }, 500); // 500ms long press
+  const handlePomoPointerDown = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+    longPressTimerRef.current = setTimeout(() => {
+      toggleFullscreenMode();
+      longPressTimerRef.current = null;
+    }, 600);
   };
 
-  const cancelLongPress = () => {
-    if (longPressTimeout.current) {
-      clearTimeout(longPressTimeout.current);
-      longPressTimeout.current = null;
+  const handlePomoPointerUp = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
     }
   };
 
@@ -293,27 +354,33 @@ export default function App() {
       {/* Top Bar */}
       <div className="w-full max-w-md flex justify-between items-center shrink-0 pt-4 px-4">
         <h1 
-          className="text-2xl font-semibold tracking-tight select-none cursor-pointer"
-          onPointerDown={handlePointerDown}
-          onPointerUp={cancelLongPress}
-          onPointerLeave={cancelLongPress}
+          className="text-2xl font-semibold tracking-tight select-none cursor-pointer active:scale-95 transition-transform"
+          onPointerDown={handlePomoPointerDown}
+          onPointerUp={handlePomoPointerUp}
+          onPointerLeave={handlePomoPointerUp}
+          onPointerCancel={handlePomoPointerUp}
           onContextMenu={(e) => e.preventDefault()}
+          title="Hold to toggle fullscreen"
         >
           Pomo
         </h1>
         <div className="flex bg-stone-200/70 dark:bg-stone-800/70 p-1 rounded-full">
-            <button 
+            <motion.button 
+                whileTap={{ scale: 0.93 }}
+                transition={buttonSpring}
                 onClick={() => handleModeChange('work')}
-                className={`px-5 py-1.5 rounded-full text-sm font-semibold transition-colors ${isWork ? primaryContainer : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+                className={`px-5 py-1.5 rounded-full text-sm font-semibold transition-colors cursor-pointer select-none touch-manipulation ${isWork ? primaryContainer : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
             >
                 Work
-            </button>
-            <button 
+            </motion.button>
+            <motion.button 
+                whileTap={{ scale: 0.93 }}
+                transition={buttonSpring}
                 onClick={() => handleModeChange('break')}
-                className={`px-5 py-1.5 rounded-full text-sm font-semibold transition-colors ${!isWork ? primaryContainer : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+                className={`px-5 py-1.5 rounded-full text-sm font-semibold transition-colors cursor-pointer select-none touch-manipulation ${!isWork ? primaryContainer : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
             >
                 Break
-            </button>
+            </motion.button>
         </div>
       </div>
 
@@ -360,41 +427,35 @@ export default function App() {
 
       {/* Controls */}
       <div className="flex items-center justify-center gap-8 shrink-0">
-        <button 
-          onClick={resetTimer}
-          onPointerDown={() => setIsResetPressed(true)}
-          onPointerUp={() => setIsResetPressed(false)}
-          onPointerLeave={() => setIsResetPressed(false)}
-          onPointerCancel={() => setIsResetPressed(false)}
-          className={`w-14 h-14 rounded-full flex items-center justify-center bg-stone-200/60 text-stone-700 dark:bg-stone-800/60 dark:text-stone-300 transition-transform duration-150 ease-out shadow-sm ${isResetPressed ? 'scale-90' : 'hover:scale-105 scale-100 hover:bg-stone-300 dark:hover:bg-stone-700'}`}
+        <motion.button 
+          onClick={handleReset}
+          whileTap={{ scale: 0.93 }}
+          transition={buttonSpring}
+          className="w-14 h-14 rounded-full flex items-center justify-center bg-stone-200/60 text-stone-700 dark:bg-stone-800/60 dark:text-stone-300 shadow-sm hover:bg-stone-300 dark:hover:bg-stone-700 cursor-pointer select-none touch-manipulation"
           aria-label="Reset Timer"
         >
             <RotateCcw size={22} />
-        </button>
+        </motion.button>
         
-        <button 
+        <motion.button 
           onClick={handlePlayPause}
-          onPointerDown={() => setIsPlayPressed(true)}
-          onPointerUp={() => setIsPlayPressed(false)}
-          onPointerLeave={() => setIsPlayPressed(false)}
-          onPointerCancel={() => setIsPlayPressed(false)}
-          className={`w-24 h-24 rounded-full flex items-center justify-center text-white shadow-lg transition-transform duration-150 ease-out ${isPlayPressed ? 'scale-90' : 'hover:scale-105 scale-100'} ${primaryBg}`}
+          whileTap={{ scale: 0.93 }}
+          transition={buttonSpring}
+          className={`w-24 h-24 rounded-full flex items-center justify-center text-white shadow-lg cursor-pointer select-none touch-manipulation hover:opacity-95 ${primaryBg}`}
           aria-label={isActive ? "Pause Timer" : "Start Timer"}
         >
-            {isActive ? <Pause size={36} className="fill-current" /> : <Play size={36} className="fill-current translate-x-[2px]" />}
-        </button>
+          {isActive ? <Pause size={36} className="fill-current" /> : <Play size={36} className="fill-current translate-x-[2px]" />}
+        </motion.button>
 
-        <button 
-          onClick={skipTimer}
-          onPointerDown={() => setIsSkipPressed(true)}
-          onPointerUp={() => setIsSkipPressed(false)}
-          onPointerLeave={() => setIsSkipPressed(false)}
-          onPointerCancel={() => setIsSkipPressed(false)}
-          className={`w-14 h-14 rounded-full flex items-center justify-center bg-stone-200/60 text-stone-700 dark:bg-stone-800/60 dark:text-stone-300 transition-transform duration-150 ease-out shadow-sm ${isSkipPressed ? 'scale-90' : 'hover:scale-105 scale-100 hover:bg-stone-300 dark:hover:bg-stone-700'}`}
+        <motion.button 
+          onClick={handleSkip}
+          whileTap={{ scale: 0.93 }}
+          transition={buttonSpring}
+          className="w-14 h-14 rounded-full flex items-center justify-center bg-stone-200/60 text-stone-700 dark:bg-stone-800/60 dark:text-stone-300 shadow-sm hover:bg-stone-300 dark:hover:bg-stone-700 cursor-pointer select-none touch-manipulation"
           aria-label="Skip Phase"
         >
             <SkipForward size={22} />
-        </button>
+        </motion.button>
       </div>
       </div>
 
@@ -415,7 +476,7 @@ export default function App() {
             isWork={isWork}
          />
          <Chip 
-            label="Custom" 
+            label={`${customWork || 1} / ${customBreak || 1}`} 
             icon={<Settings2 size={16} />} 
             selected={preset === 'custom'} 
             onClick={() => handlePresetChange('custom')} 
@@ -424,14 +485,21 @@ export default function App() {
       </div>
 
       {/* Custom Settings Bottom Area */}
-      <div className={`w-full max-w-md px-4 transition-all duration-300 overflow-hidden ${preset === 'custom' ? 'opacity-100 max-h-64' : 'opacity-0 max-h-0'}`}>
+      <div className={`w-full max-w-md px-4 transition-all duration-300 overflow-hidden ${isCustomExpanded ? 'opacity-100 max-h-64' : 'opacity-0 max-h-0'}`}>
         <div className="bg-white dark:bg-stone-900/60 rounded-[28px] p-5 shadow-sm border border-stone-100 dark:border-stone-800/80 flex justify-around items-center">
             
             {/* Work Setting */}
             <div className="flex flex-col items-center w-1/2">
                 <label className="text-[11px] font-bold text-stone-500 dark:text-stone-400 uppercase tracking-widest mb-3">Work (m)</label>
                 <div className="flex items-center gap-3">
-                    <button {...workDecRepeat} className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors">-</button>
+                    <motion.button 
+                      {...workDecRepeat} 
+                      whileTap={{ scale: 0.93 }}
+                      transition={buttonSpring}
+                      className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
+                    >
+                      -
+                    </motion.button>
                     <input 
                         type="text" 
                         inputMode="numeric" 
@@ -450,7 +518,14 @@ export default function App() {
                         }}
                         className="w-12 text-center text-xl font-medium tabular-nums bg-transparent border-b-2 border-transparent focus:border-orange-400 dark:focus:border-orange-500 outline-none transition-colors select-text"
                     />
-                    <button {...workIncRepeat} className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors">+</button>
+                    <motion.button 
+                      {...workIncRepeat} 
+                      whileTap={{ scale: 0.93 }}
+                      transition={buttonSpring}
+                      className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
+                    >
+                      +
+                    </motion.button>
                 </div>
             </div>
             
@@ -460,7 +535,14 @@ export default function App() {
             <div className="flex flex-col items-center w-1/2">
                 <label className="text-[11px] font-bold text-stone-500 dark:text-stone-400 uppercase tracking-widest mb-3">Break (m)</label>
                 <div className="flex items-center gap-3">
-                    <button {...breakDecRepeat} className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors">-</button>
+                    <motion.button 
+                      {...breakDecRepeat} 
+                      whileTap={{ scale: 0.93 }}
+                      transition={buttonSpring}
+                      className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
+                    >
+                      -
+                    </motion.button>
                     <input 
                         type="text" 
                         inputMode="numeric" 
@@ -479,7 +561,14 @@ export default function App() {
                         }}
                         className="w-12 text-center text-xl font-medium tabular-nums bg-transparent border-b-2 border-transparent focus:border-orange-400 dark:focus:border-orange-500 outline-none transition-colors select-text"
                     />
-                    <button {...breakIncRepeat} className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors">+</button>
+                    <motion.button 
+                      {...breakIncRepeat} 
+                      whileTap={{ scale: 0.93 }}
+                      transition={buttonSpring}
+                      className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
+                    >
+                      +
+                    </motion.button>
                 </div>
             </div>
 
@@ -499,12 +588,14 @@ function Chip({ label, icon, selected, onClick, isWork }: { label: string, icon?
     const unselectedClass = 'bg-stone-100 text-stone-600 dark:bg-stone-800/80 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 border-transparent transition-colors';
 
     return (
-        <button 
+        <motion.button 
+            whileTap={{ scale: 0.93 }}
+            transition={buttonSpring}
             onClick={onClick}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium text-sm transition-all ${selected ? selectedClass : unselectedClass}`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium text-sm transition-colors cursor-pointer select-none touch-manipulation ${selected ? selectedClass : unselectedClass}`}
         >
             {icon}
             {label}
-        </button>
+        </motion.button>
     );
 }
