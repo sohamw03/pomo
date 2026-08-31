@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Play, Pause, RotateCcw, Settings2, SkipForward } from 'lucide-react';
+import { RotateCcw, Settings2, SkipForward, Minus, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 import '@material/web/ripple/ripple.js';
 import { useTimer } from './useTimer';
@@ -8,6 +8,23 @@ type Preset = '25/5' | '50/10' | 'custom';
 type Mode = 'work' | 'break';
 
 const beepAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+const PAUSE_ICON_PATH = {
+  left: 'M5 5L9 5L9 19L5 19Z',
+  right: 'M15 5L19 5L19 19L15 19Z',
+} as const;
+
+const PLAY_ICON_PATH = {
+  left: 'M7 5L13 8.5L13 15.5L7 19Z',
+  right: 'M13 8.5L19 12L19 12L13 15.5Z',
+} as const;
+
+const PLAY_PAUSE_SPRING = {
+  type: 'spring',
+  stiffness: 260,
+  damping: 26,
+  mass: 0.9,
+} as const;
 
 function playAlarm(nextMode: 'work' | 'break') {
   if (beepAudioContext.state === 'suspended') {
@@ -256,20 +273,27 @@ export default function App() {
       if (preset === 'custom') {
         setIsCustomExpanded(!isCustomExpanded);
       } else {
+        const nextDuration = mode === 'work'
+          ? (typeof customWork === 'number' ? customWork : 1) * 60
+          : (typeof customBreak === 'number' ? customBreak : 1) * 60;
         setPreset('custom');
         setIsCustomExpanded(true);
-        resetTimer();
+        resetTimer(nextDuration, mode);
       }
     } else {
+      const nextDuration = mode === 'work'
+        ? (newPreset === '25/5' ? 25 : 50) * 60
+        : (newPreset === '25/5' ? 5 : 10) * 60;
       setPreset(newPreset);
       setIsCustomExpanded(false);
-      resetTimer();
+      resetTimer(nextDuration, mode);
     }
   };
 
   const handleModeChange = (newMode: Mode) => {
+    const nextDuration = (newMode === 'work' ? workDuration : breakDuration) * 60;
     setMode(newMode);
-    resetTimer();
+    resetTimer(nextDuration, newMode);
   };
 
   const handlePlayPause = () => {
@@ -375,7 +399,7 @@ export default function App() {
 
   return (
     <div 
-      className="fixed inset-0 overflow-x-hidden overflow-y-auto bg-stone-50 dark:bg-[#151413] text-stone-900 dark:text-stone-100 flex flex-col items-center px-4 font-sans selection:bg-[#ffdcc2] select-none"
+      className="pomo-shell fixed inset-0 overflow-x-hidden overflow-y-auto bg-stone-50 dark:bg-[#151413] text-stone-900 dark:text-stone-100 flex flex-col items-center px-4 font-sans selection:bg-[#ffdcc2] select-none"
       style={{
         paddingTop: 'max(1rem, env(safe-area-inset-top))',
         paddingBottom: 'max(1rem, env(safe-area-inset-bottom))'
@@ -383,9 +407,9 @@ export default function App() {
     >
       
       {/* Top Bar */}
-      <div className="w-full max-w-md flex justify-between items-center shrink-0 pt-4 px-4">
+      <div className="pomo-region pomo-topbar w-full max-w-md flex justify-between items-center shrink-0 pt-4 px-4">
         <h1 
-          className="text-2xl font-semibold tracking-tight select-none cursor-pointer active:scale-95 transition-transform"
+          className="text-2xl font-semibold tracking-tight select-none cursor-pointer"
           onPointerDown={handlePomoPointerDown}
           onPointerUp={handlePomoPointerUp}
           onPointerLeave={handlePomoPointerUp}
@@ -395,7 +419,7 @@ export default function App() {
         >
           Pomo
         </h1>
-        <div className="flex bg-stone-200/70 dark:bg-stone-800/70 p-1 rounded-full">
+        <div className="flex gap-1 bg-stone-200/70 dark:bg-stone-800/70 p-1 rounded-full">
             <RippleMotionButton
                 onClick={() => handleModeChange('work')}
                 className={`px-5 py-1.5 rounded-full text-sm font-semibold transition-colors cursor-pointer select-none touch-manipulation ${isWork ? primaryContainer : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
@@ -412,13 +436,14 @@ export default function App() {
       </div>
 
       {/* Main Centered Area */}
-      <div className="flex-1 flex flex-col items-center justify-center w-full min-h-0 gap-10 pb-4">
+      <div className="pomo-region pomo-main flex-1 flex flex-col items-center justify-center w-full min-h-0 gap-10 pb-4">
           {/* Timer Circle */}
-          <div className="relative flex items-center justify-center shrink-0">
+          <div className="pomo-timer relative flex items-center justify-center shrink-0">
             <svg
           height={radius * 2}
           width={radius * 2}
-          className="transform -rotate-90 drop-shadow-sm"
+          className="pomo-ring transform -rotate-90 drop-shadow-sm"
+          viewBox={`0 0 ${radius * 2} ${radius * 2}`}
         >
           <circle
             stroke="currentColor"
@@ -442,7 +467,10 @@ export default function App() {
             className={primaryRingColor}
           />
           {progressPercent > 0 && (
-            <circle
+            <motion.circle
+              initial={false}
+              animate={{ cx: nubX, cy: nubY }}
+              transition={{ duration: 0.1, ease: 'linear' }}
               cx={nubX}
               cy={nubY}
               r={stroke / 2}
@@ -462,7 +490,7 @@ export default function App() {
       </div>
 
       {/* Controls */}
-      <div className="flex items-center justify-center gap-8 shrink-0">
+      <div className="pomo-controls flex items-center justify-center gap-8 shrink-0">
         <RippleMotionButton
           onClick={handleReset}
           className="w-14 h-14 rounded-full flex items-center justify-center bg-stone-200/60 text-stone-700 dark:bg-stone-800/60 dark:text-stone-300 shadow-sm hover:bg-stone-300 dark:hover:bg-stone-700 cursor-pointer select-none touch-manipulation"
@@ -476,7 +504,29 @@ export default function App() {
           className={`w-24 h-24 rounded-full flex items-center justify-center ${primaryOnColor} shadow-lg cursor-pointer select-none touch-manipulation hover:opacity-95 ${primaryBg}`}
           aria-label={isActive ? "Pause Timer" : "Start Timer"}
         >
-          {isActive ? <Pause size={36} className="fill-current" /> : <Play size={36} className="fill-current translate-x-[2px]" />}
+          <motion.svg
+            width={48}
+            height={48}
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="shrink-0"
+            fill="currentColor"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          >
+            <motion.path
+              animate={{ d: isActive ? PAUSE_ICON_PATH.left : PLAY_ICON_PATH.left }}
+              transition={PLAY_PAUSE_SPRING}
+              initial={false}
+            />
+            <motion.path
+              animate={{ d: isActive ? PAUSE_ICON_PATH.right : PLAY_ICON_PATH.right }}
+              transition={PLAY_PAUSE_SPRING}
+              initial={false}
+            />
+          </motion.svg>
         </RippleMotionButton>
 
         <RippleMotionButton
@@ -490,7 +540,7 @@ export default function App() {
       </div>
 
       {/* Bottom Area */}
-      <div className="w-full max-w-md shrink-0 flex flex-col items-center pb-6">
+      <div className="pomo-region pomo-bottom w-full max-w-md shrink-0 flex flex-col items-center pb-6">
           {/* Presets - M3 segmented choice chips */}
           <div className="w-full flex gap-2 justify-center mb-6 flex-wrap">
          <Chip 
@@ -515,7 +565,7 @@ export default function App() {
       </div>
 
       {/* Custom Settings Bottom Area */}
-      <div className={`w-full max-w-md px-4 transition-all duration-300 overflow-hidden ${isCustomExpanded ? 'opacity-100 max-h-64' : 'opacity-0 max-h-0'}`}>
+      <div className={`pomo-custom-settings w-full max-w-md px-4 transition-all duration-300 overflow-hidden ${isCustomExpanded ? 'opacity-100 max-h-64' : 'opacity-0 max-h-0'}`}>
         <div className="bg-white dark:bg-stone-900/60 rounded-[28px] p-5 shadow-sm border border-stone-100 dark:border-stone-800/80 flex justify-around items-center">
             
             {/* Work Setting */}
@@ -524,9 +574,10 @@ export default function App() {
                 <div className="flex items-center gap-3">
                     <RippleMotionButton
                       {...workDecRepeat} 
-                      className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
+                      aria-label="Decrease work duration"
+                      className="pomo-stepper-button w-10 h-10 p-0 text-xl leading-none flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
                     >
-                      -
+                      <Minus size={18} strokeWidth={2.25} aria-hidden="true" />
                     </RippleMotionButton>
                     <input 
                         type="text" 
@@ -548,9 +599,10 @@ export default function App() {
                     />
                     <RippleMotionButton
                       {...workIncRepeat} 
-                      className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
+                      aria-label="Increase work duration"
+                      className="pomo-stepper-button w-10 h-10 p-0 text-xl leading-none flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
                     >
-                      +
+                      <Plus size={18} strokeWidth={2.25} aria-hidden="true" />
                     </RippleMotionButton>
                 </div>
             </div>
@@ -563,9 +615,10 @@ export default function App() {
                 <div className="flex items-center gap-3">
                     <RippleMotionButton
                       {...breakDecRepeat} 
-                      className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
+                      aria-label="Decrease break duration"
+                      className="pomo-stepper-button w-10 h-10 p-0 text-xl leading-none flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
                     >
-                      -
+                      <Minus size={18} strokeWidth={2.25} aria-hidden="true" />
                     </RippleMotionButton>
                     <input 
                         type="text" 
@@ -587,9 +640,10 @@ export default function App() {
                     />
                     <RippleMotionButton
                       {...breakIncRepeat} 
-                      className="w-10 h-10 text-xl flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
+                      aria-label="Increase break duration"
+                      className="pomo-stepper-button w-10 h-10 p-0 text-xl leading-none flex items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 transition-colors cursor-pointer select-none touch-manipulation"
                     >
-                      +
+                      <Plus size={18} strokeWidth={2.25} aria-hidden="true" />
                     </RippleMotionButton>
                 </div>
             </div>

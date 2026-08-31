@@ -11,3 +11,47 @@ button {
   touch-action: none;
 }
 
+@media (min-width: 768px) {
+  .pomo-shell {
+    isolation: isolate;
+    justify-content: center;
+    gap: 1.5rem;
+    padding-inline: 2rem;
+  }
+
+  .pomo-topbar,
+  .pomo-bottom {
+    max-width: 52rem;
+  }
+
+  .pomo-topbar {
+    width: auto;
+    max-width: none;
+    justify-content: center;
+    gap: 2rem;
+  }
+
+  .pomo-topbar h1 {
+    display: none;
+  }
+
+  .pomo-main {
+    flex: none;
+    gap: 1.5rem;
+    padding-bottom: 0;
+  }
+
+  .pomo-ring {
+    width: 420px;
+    height: 420px;
+    filter: none;
+  }
+
+  .pomo-controls {
+    gap: 2.5rem;
+  }
+
+  .pomo-custom-settings {
+    max-width: 40rem;
+  }
+}

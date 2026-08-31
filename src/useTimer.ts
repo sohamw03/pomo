@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 
 export function useTimer(initialSeconds: number, modeKey: string, onComplete: (isSkip?: boolean) => void) {
   const loadInitialState = () => {
@@ -36,7 +36,7 @@ export function useTimer(initialSeconds: number, modeKey: string, onComplete: (i
   const prevModeKeyRef = useRef(modeKey);
 
   // Handle changes to initialSeconds or mode (e.g. mode switch or preset change)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (prevInitialSecondsRef.current !== initialSeconds || prevModeKeyRef.current !== modeKey) {
       prevInitialSecondsRef.current = initialSeconds;
       prevModeKeyRef.current = modeKey;
@@ -116,14 +116,14 @@ export function useTimer(initialSeconds: number, modeKey: string, onComplete: (i
     });
   }, [modeKey, timeLeft]);
   
-  const resetTimer = useCallback(() => {
+  const resetTimer = useCallback((nextSeconds = initialSeconds, nextModeKey = modeKey) => {
     setIsActive(false);
-    setTimeLeft(initialSeconds);
+    setTimeLeft(nextSeconds);
     endTimeRef.current = null;
     localStorage.setItem('pomo_timer_state', JSON.stringify({
-      modeKey,
+      modeKey: nextModeKey,
       isActive: false,
-      timeLeft: initialSeconds,
+      timeLeft: nextSeconds,
       endTime: null
     }));
   }, [initialSeconds, modeKey]);
