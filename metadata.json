@@ -1,8 +1,0 @@
-{
-  "name": "Pomo",
-  "description": "A mobile-friendly Material 3 style Pomodoro timer with custom work/break intervals.",
-  "requestFramePermissions": [
-    "screen-wake-lock"
-  ],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

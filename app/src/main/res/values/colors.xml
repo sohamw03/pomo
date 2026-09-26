@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="pomo_orange_primary">#F97316</color>
+    <color name="pomo_orange_primary_container">#FFDBCB</color>
+    <color name="pomo_emerald_primary">#10B981</color>
+    <color name="pomo_emerald_primary_container">#89F8C7</color>
+    <color name="surface_light">#FAFAF9</color>
+    <color name="surface_dark">#151413</color>
+</resources>
