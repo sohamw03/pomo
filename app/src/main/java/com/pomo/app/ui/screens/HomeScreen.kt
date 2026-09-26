@@ -1,16 +1,13 @@
 package com.pomo.app.ui.screens
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,35 +16,22 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RotateLeft
 import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Badge
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -58,7 +42,6 @@ import com.pomo.app.model.TimerMode
 import com.pomo.app.model.TimerUiState
 import com.pomo.app.ui.components.CustomDurationPanel
 import com.pomo.app.ui.components.PresetChips
-import com.pomo.app.ui.components.SettingsBottomSheet
 import com.pomo.app.ui.components.TimerRing
 import com.pomo.app.viewmodel.TimerViewModel
 
@@ -75,29 +58,23 @@ fun HomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .statusBarsPadding()
-                .navigationBarsPadding(),
+                .padding(innerPadding),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Top App Bar
-            TopBarSection(
-                mode = uiState.mode,
-                completedSessions = uiState.completedSessionsToday,
-                onModeChange = { viewModel.setMode(it) },
-                onOpenSettings = { viewModel.setSettingsOpen(true) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp)
-            )
-
-            // Center Ring and Timer Controls
+            // Center: mode toggle above the ring, like the web's desktop mode
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
                 modifier = Modifier.weight(1f)
             ) {
+                ModeToggle(
+                    mode = uiState.mode,
+                    onModeChange = { viewModel.setMode(it) }
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
                 TimerRing(
                     mode = uiState.mode,
                     timeFormatted = uiState.timeFormatted,
@@ -105,7 +82,7 @@ fun HomeScreen(
                     isRunning = uiState.isRunning
                 )
 
-                Spacer(modifier = Modifier.height(36.dp))
+                Spacer(modifier = Modifier.height(40.dp))
 
                 // Play / Pause / Reset / Skip Controls
                 TimerControlsSection(
@@ -121,7 +98,7 @@ fun HomeScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp)
+                    .padding(bottom = 24.dp)
             ) {
                 PresetChips(
                     selectedPreset = uiState.preset,
@@ -141,107 +118,75 @@ fun HomeScreen(
                 )
             }
         }
-
-        // Settings Bottom Sheet
-        SettingsBottomSheet(
-            isOpen = uiState.isSettingsOpen,
-            onDismiss = { viewModel.setSettingsOpen(false) },
-            settings = uiState.settings,
-            completedSessionsToday = uiState.completedSessionsToday,
-            onUpdateSettings = { viewModel.updateSettings(it) },
-            onResetStreak = { viewModel.resetStreak() },
-            onTestAlarm = { viewModel.testAudioAlarm() }
-        )
     }
 }
 
 @Composable
-private fun TopBarSection(
+private fun ModeToggle(
     mode: TimerMode,
-    completedSessions: Int,
     onModeChange: (TimerMode) -> Unit,
-    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.clickable { onOpenSettings() }
+        // Mode toggle: plain track pill with two ripple pills inside, matching
+        // the web's custom toggle (no M3 segmented control, no outline).
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainer
         ) {
-            Text(
-                text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.5).sp
-                ),
-                color = MaterialTheme.colorScheme.onBackground
-            )
-
-            if (completedSessions > 0) {
-                Spacer(modifier = Modifier.width(8.dp))
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                ) {
-                    Text(
-                        text = "🍅 $completedSessions",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
+            Row(
+                modifier = Modifier.padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ModePill(
+                    selected = mode == TimerMode.WORK,
+                    label = stringResource(R.string.work_mode),
+                    onClick = { onModeChange(TimerMode.WORK) }
+                )
+                ModePill(
+                    selected = mode == TimerMode.BREAK,
+                    label = stringResource(R.string.break_mode),
+                    onClick = { onModeChange(TimerMode.BREAK) }
+                )
             }
         }
+    }
+}
 
-        // Mode Segmented Buttons & Settings Action
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SingleChoiceSegmentedButtonRow(
-                modifier = Modifier.height(36.dp)
-            ) {
-                SegmentedButton(
-                    selected = mode == TimerMode.WORK,
-                    onClick = { onModeChange(TimerMode.WORK) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                ) {
-                    Text(
-                        text = stringResource(R.string.work_mode),
-                        style = MaterialTheme.typography.labelMedium
-                    )
+@Composable
+private fun ModePill(
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        modifier = modifier.height(36.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
                 }
-
-                SegmentedButton(
-                    selected = mode == TimerMode.BREAK,
-                    onClick = { onModeChange(TimerMode.BREAK) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                ) {
-                    Text(
-                        text = stringResource(R.string.break_mode),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier.size(38.dp)
-            ) {
-                IconButton(onClick = onOpenSettings) {
-                    Icon(
-                        imageVector = Icons.Default.Tune,
-                        contentDescription = stringResource(R.string.preferences_title),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
+            )
         }
     }
 }
@@ -254,54 +199,51 @@ private fun TimerControlsSection(
     onSkip: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val playButtonScale by animateFloatAsState(
-        targetValue = if (isRunning) 1.05f else 1.0f,
-        animationSpec = spring(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "playScale"
-    )
-
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(28.dp),
+        horizontalArrangement = Arrangement.spacedBy(32.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Reset Button
         Surface(
+            onClick = onReset,
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainer,
             shadowElevation = 2.dp,
             modifier = Modifier.size(56.dp)
         ) {
-            IconButton(
-                onClick = onReset,
+            Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier.fillMaxSize()
             ) {
                 Icon(
                     imageVector = Icons.Default.RotateLeft,
                     contentDescription = stringResource(R.string.reset_timer),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
 
         // Hero Play / Pause Button
         Surface(
+            onClick = onTogglePlayPause,
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.colorScheme.primaryContainer,
             shadowElevation = 8.dp,
-            modifier = Modifier
-                .size(92.dp)
-                .scale(playButtonScale)
+            modifier = Modifier.size(96.dp)
         ) {
-            IconButton(
-                onClick = onTogglePlayPause,
+            Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier.fillMaxSize()
             ) {
                 AnimatedContent(
                     targetState = isRunning,
                     transitionSpec = {
-                        fadeIn(tween(200)) togetherWith fadeOut(tween(200))
+                        (fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
+                            scaleIn(spring(stiffness = Spring.StiffnessMedium))) togetherWith
+                            (fadeOut(spring(stiffness = Spring.StiffnessMedium)) +
+                                scaleOut(spring(stiffness = Spring.StiffnessMedium)))
                     },
                     label = "playPauseIcon"
                 ) { running ->
@@ -310,8 +252,8 @@ private fun TimerControlsSection(
                         contentDescription = stringResource(
                             if (running) R.string.pause_timer else R.string.play_timer
                         ),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(44.dp)
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(48.dp)
                     )
                 }
             }
@@ -319,20 +261,21 @@ private fun TimerControlsSection(
 
         // Skip Button
         Surface(
+            onClick = onSkip,
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainer,
             shadowElevation = 2.dp,
             modifier = Modifier.size(56.dp)
         ) {
-            IconButton(
-                onClick = onSkip,
+            Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier.fillMaxSize()
             ) {
                 Icon(
                     imageVector = Icons.Default.SkipNext,
                     contentDescription = stringResource(R.string.skip_phase),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }

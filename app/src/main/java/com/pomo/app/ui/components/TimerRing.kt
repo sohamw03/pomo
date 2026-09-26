@@ -1,23 +1,14 @@
 package com.pomo.app.ui.components
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
@@ -52,33 +42,13 @@ fun TimerRing(
         label = "progress"
     )
 
-    val primaryColor = MaterialTheme.colorScheme.primary
+    val primaryColor = MaterialTheme.colorScheme.primaryContainer
     val trackBgColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseGlow by infiniteTransition.animateFloat(
-        initialValue = 0.15f,
-        targetValue = 0.35f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseGlow"
-    )
 
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier.size(310.dp)
     ) {
-        // Glowing aura when running
-        if (isRunning) {
-            Surface(
-                modifier = Modifier.size(290.dp),
-                shape = CircleShape,
-                color = primaryColor.copy(alpha = pulseGlow)
-            ) {}
-        }
-
         Canvas(modifier = Modifier.size(300.dp)) {
             val strokeWidthPx = 13.dp.toPx()
             val diameter = size.minDimension - strokeWidthPx
@@ -135,28 +105,16 @@ fun TimerRing(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    modifier = Modifier.size(8.dp),
-                    shape = CircleShape,
-                    color = if (isRunning) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                ) {}
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Text(
-                    text = stringResource(
-                        if (mode.isWork) R.string.focus_label else R.string.relax_label
-                    ).uppercase(),
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                text = stringResource(
+                    if (mode.isWork) R.string.focus_label else R.string.relax_label
+                ).uppercase(),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

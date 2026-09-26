@@ -6,6 +6,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,8 +31,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +40,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -150,10 +155,12 @@ private fun StepperColumn(
                 value = textState,
                 onValueChange = { input ->
                     if (input.isEmpty()) {
+                        // Allowed while typing; committed on blur like the web.
                         textState = ""
                     } else if (input.all { it.isDigit() } && input.length <= 3) {
                         textState = input
-                        input.toIntOrNull()?.let { onValueChange(it) }
+                        // The web only commits >= 1 and clamps the rest on blur.
+                        input.toIntOrNull()?.takeIf { it in 1..999 }?.let { onValueChange(it) }
                     }
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -167,6 +174,13 @@ private fun StepperColumn(
                 modifier = Modifier
                     .width(48.dp)
                     .padding(horizontal = 4.dp)
+                    .onFocusChanged { focus ->
+                        // Web onBlur: empty or < 1 snaps back to the committed value.
+                        if (!focus.isFocused) {
+                            val num = textState.toIntOrNull()
+                            if (num == null || num < 1) textState = value.toString()
+                        }
+                    }
             )
 
             RepeatButton(
@@ -187,6 +201,7 @@ private fun RepeatButton(
 ) {
     val coroutineScope = rememberCoroutineScope()
     var repeatJob by remember { mutableStateOf<Job?>(null) }
+    val interactionSource = remember { MutableInteractionSource() }
 
     Surface(
         shape = CircleShape,
@@ -194,11 +209,15 @@ private fun RepeatButton(
         contentColor = MaterialTheme.colorScheme.onSurface,
         shadowElevation = 1.dp,
         modifier = modifier
-            .size(36.dp)
+            .size(40.dp)
+            .clip(CircleShape)
+            .indication(interactionSource, ripple())
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onPress = {
+                    onPress = { offset ->
                         onTrigger()
+                        val press = PressInteraction.Press(offset)
+                        interactionSource.emit(press)
                         repeatJob = coroutineScope.launch {
                             delay(350)
                             while (true) {
@@ -206,7 +225,11 @@ private fun RepeatButton(
                                 delay(90)
                             }
                         }
-                        tryAwaitRelease()
+                        if (tryAwaitRelease()) {
+                            interactionSource.emit(PressInteraction.Release(press))
+                        } else {
+                            interactionSource.emit(PressInteraction.Cancel(press))
+                        }
                         repeatJob?.cancel()
                         repeatJob = null
                     }

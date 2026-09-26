@@ -6,7 +6,7 @@ import android.media.AudioTrack
 import com.pomo.app.model.TimerMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.math.exp
+import kotlin.math.pow
 import kotlin.math.sin
 
 object AudioSynthesizer {
@@ -18,20 +18,20 @@ object AudioSynthesizer {
 
         if (nextMode == TimerMode.BREAK) {
             // Ascending double chime: G5 (783.99 Hz) -> C6 (1046.50 Hz)
-            val note1 = generateTone(783.99, 1.2, 0.5f * vol)
-            val note2 = generateTone(1046.50, 1.5, 0.5f * vol)
+            val note1 = generateTone(783.99, 1.5, 0.5f * vol)
+            val note2 = generateTone(1046.50, 2.0, 0.5f * vol)
             val combined = mixTones(listOf(
                 ToneEntry(note1, 0),
-                ToneEntry(note2, (0.18 * SAMPLE_RATE).toInt())
+                ToneEntry(note2, (0.2 * SAMPLE_RATE).toInt())
             ))
             playPcm(combined)
         } else {
             // Repeating alert bell: A5 (880 Hz), A5 (880 Hz)
-            val note1 = generateTone(880.00, 1.0, 0.45f * vol)
-            val note2 = generateTone(880.00, 1.2, 0.45f * vol)
+            val note1 = generateTone(880.00, 1.2, 0.4f * vol)
+            val note2 = generateTone(880.00, 1.5, 0.4f * vol)
             val combined = mixTones(listOf(
                 ToneEntry(note1, 0),
-                ToneEntry(note2, (0.16 * SAMPLE_RATE).toInt())
+                ToneEntry(note2, (0.15 * SAMPLE_RATE).toInt())
             ))
             playPcm(combined)
         }
@@ -43,6 +43,11 @@ object AudioSynthesizer {
         val numSamples = (durationSec * SAMPLE_RATE).toInt()
         val samples = ShortArray(numSamples)
         val attackSamples = (0.02 * SAMPLE_RATE).toInt()
+        // Matches the web exponentialRampToValueAtTime(0.001, start + duration):
+        // value(k) = peak * (0.001 / peak)^(k / tail), hitting exactly 0.001
+        // at the last sample.
+        val tailSamples = (numSamples - attackSamples).toDouble()
+        val decayBase = 0.001 / peakVolume.toDouble()
 
         for (i in 0 until numSamples) {
             val time = i.toDouble() / SAMPLE_RATE
@@ -52,8 +57,8 @@ object AudioSynthesizer {
             val gain = if (i < attackSamples) {
                 (i.toFloat() / attackSamples) * peakVolume
             } else {
-                val decayProgress = (i - attackSamples).toDouble() / (numSamples - attackSamples)
-                (peakVolume * exp(-4.0 * decayProgress)).toFloat()
+                val k = (i - attackSamples).toDouble() / tailSamples
+                (peakVolume * decayBase.pow(k)).toFloat()
             }
 
             val sampleVal = (rawSine * gain * Short.MAX_VALUE).toInt()
@@ -97,7 +102,7 @@ object AudioSynthesizer {
             val track = AudioTrack.Builder()
                 .setAudioAttributes(
                     AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                 )

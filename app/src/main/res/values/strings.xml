@@ -10,25 +10,6 @@
     <string name="play_timer">Start Timer</string>
     <string name="pause_timer">Pause Timer</string>
     <string name="skip_phase">Skip Phase</string>
-    <string name="preferences_title">Preferences</string>
-    <string name="sound_alarm">Sound Alarm</string>
-    <string name="sound_alarm_desc">Play audio chimes when timer completes</string>
-    <string name="vibration_haptics">Vibration Haptics</string>
-    <string name="vibration_haptics_desc">Tactile buzz on buttons and timer end</string>
-    <string name="notifications">Notifications</string>
-    <string name="notifications_desc">Notify when session ends in background</string>
-    <string name="auto_start">Auto-start cycles</string>
-    <string name="auto_start_desc">Automatically advance between Work and Break</string>
-    <string name="today_streak">Today\'s Focus Streak</string>
-    <string name="sessions_completed">%d sessions completed</string>
-    <string name="reset">Reset</string>
-    <string name="done">Done</string>
     <string name="work_min">Work (min)</string>
     <string name="break_min">Break (min)</string>
-    <string name="notification_channel_name">Pomodoro Alerts</string>
-    <string name="notification_channel_desc">Alerts for completed work and break sessions</string>
-    <string name="focus_complete_title">Focus Session Completed! 🍅</string>
-    <string name="focus_complete_body">Great job! Time for a restful break.</string>
-    <string name="break_complete_title">Break Time Finished! ⚡</string>
-    <string name="break_complete_body">Ready to get back into focus mode?</string>
 </resources>

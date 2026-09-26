@@ -1,5 +1,6 @@
 package com.pomo.app.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,10 +15,29 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.pomo.app.R
 import com.pomo.app.model.TimerPreset
+
+@Composable
+private fun pomoChipColors(selected: Boolean) = FilterChipDefaults.filterChipColors(
+    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimaryContainer
+)
+
+@Composable
+private fun pomoChipBorder(selected: Boolean) = FilterChipDefaults.filterChipBorder(
+    enabled = true,
+    selected = selected,
+    borderColor = Color.Transparent,
+    selectedBorderColor = Color.Transparent
+)
 
 @Composable
 fun PresetChips(
@@ -38,10 +58,8 @@ fun PresetChips(
             onClick = { onSelectPreset(TimerPreset.P_25_5) },
             label = { Text(stringResource(R.string.preset_25_5)) },
             shape = MaterialTheme.shapes.large,
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-            )
+            colors = pomoChipColors(selectedPreset == TimerPreset.P_25_5),
+            border = pomoChipBorder(selectedPreset == TimerPreset.P_25_5)
         )
 
         FilterChip(
@@ -49,10 +67,8 @@ fun PresetChips(
             onClick = { onSelectPreset(TimerPreset.P_50_10) },
             label = { Text(stringResource(R.string.preset_50_10)) },
             shape = MaterialTheme.shapes.large,
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-            )
+            colors = pomoChipColors(selectedPreset == TimerPreset.P_50_10),
+            border = pomoChipBorder(selectedPreset == TimerPreset.P_50_10)
         )
 
         FilterChip(
@@ -67,10 +83,8 @@ fun PresetChips(
             },
             label = { Text("$customWork / $customBreak") },
             shape = MaterialTheme.shapes.large,
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-            )
+            colors = pomoChipColors(selectedPreset == TimerPreset.CUSTOM),
+            border = pomoChipBorder(selectedPreset == TimerPreset.CUSTOM)
         )
     }
 }

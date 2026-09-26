@@ -14,17 +14,6 @@ enum class TimerPreset {
     CUSTOM
 }
 
-data class AppSettings(
-    val soundEnabled: Boolean = true,
-    val soundVolume: Float = 0.8f,
-    val hapticsEnabled: Boolean = true,
-    val notificationsEnabled: Boolean = false,
-    // The web app has no such setting: it always rolls straight into the next
-    // phase. Defaulting to true keeps the ported app behaving the same way out
-    // of the box; the toggle is there to opt out.
-    val autoStartNext: Boolean = true
-)
-
 data class TimerUiState(
     val mode: TimerMode = TimerMode.WORK,
     val preset: TimerPreset = TimerPreset.P_25_5,
@@ -33,10 +22,7 @@ data class TimerUiState(
     val timeLeftSeconds: Int = 25 * 60,
     val totalDurationSeconds: Int = 25 * 60,
     val isRunning: Boolean = false,
-    val isCustomExpanded: Boolean = false,
-    val isSettingsOpen: Boolean = false,
-    val completedSessionsToday: Int = 0,
-    val settings: AppSettings = AppSettings()
+    val isCustomExpanded: Boolean = false
 ) {
     val timeFormatted: String
         get() {
