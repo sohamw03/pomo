@@ -12,6 +12,9 @@ captures/
 .externalNativeBuild/
 .cxx/
 
+# Build output pulled down from the Codespace
+dist/
+
 # IDE
 .idea/
 *.iml
