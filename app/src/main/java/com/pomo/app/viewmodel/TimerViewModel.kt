@@ -12,6 +12,7 @@ import com.pomo.app.model.TimerMode
 import com.pomo.app.model.TimerPreset
 import com.pomo.app.model.TimerUiState
 import com.pomo.app.notification.NotificationHelper
+import com.pomo.app.timer.TimerWakeLock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,9 +20,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class TimerViewModel(application: Application) : AndroidViewModel(application) {
+    private companion object {
+        /** Countdown refresh interval, matching the web app's 100ms tick. */
+        const val TICK_MS = 100L
+    }
+
     private val repository = TimerPreferencesRepository(application)
     private val hapticHelper = HapticHelper(application)
     private val notificationHelper = NotificationHelper(application)
@@ -31,11 +38,30 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     private var timerJob: Job? = null
     private var targetEndTimeMs: Long = 0L
+    private val wakeLock = TimerWakeLock(application)
 
     init {
         viewModelScope.launch {
             val initial = repository.preferencesFlow.first()
             val totalSeconds = calculateDuration(initial.mode, initial.preset, initial.customWork, initial.customBreak)
+
+            // Mirrors the web app's loadInitialState(): a saved timer is only
+            // restored when it belongs to the mode currently in effect.
+            var timeLeft = totalSeconds
+            var running = false
+            var endTime = 0L
+            if (initial.timerModeKey != null && initial.timerModeKey == initial.mode.name) {
+                if (initial.timerActive && initial.timerEndTime > 0L) {
+                    val remaining = Math.round(
+                        (initial.timerEndTime - System.currentTimeMillis()) / 1000.0
+                    ).toInt()
+                    timeLeft = maxOf(0, remaining)
+                    running = true
+                    endTime = initial.timerEndTime
+                } else {
+                    timeLeft = initial.timerTimeLeft
+                }
+            }
 
             _uiState.update {
                 it.copy(
@@ -43,12 +69,29 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
                     preset = initial.preset,
                     customWorkMinutes = initial.customWork,
                     customBreakMinutes = initial.customBreak,
-                    timeLeftSeconds = totalSeconds,
+                    timeLeftSeconds = timeLeft,
                     totalDurationSeconds = totalSeconds,
                     settings = initial.settings,
-                    completedSessionsToday = initial.completedSessionsToday
+                    completedSessionsToday = initial.completedSessionsToday,
+                    isRunning = running
                 )
             }
+
+            if (running) {
+                // Resume against the original deadline rather than restarting,
+                // so a session that was killed 20 minutes in still ends on time.
+                targetEndTimeMs = endTime
+                beginTicking()
+            }
+        }
+    }
+
+    /** Persist the running timer. Only called on transitions, never per tick. */
+    private fun persistTimerState(active: Boolean, timeLeft: Int) {
+        val modeKey = _uiState.value.mode.name
+        val endTime = if (active) targetEndTimeMs else 0L
+        viewModelScope.launch {
+            repository.saveTimerState(modeKey, active, timeLeft, endTime)
         }
     }
 
@@ -79,29 +122,38 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun startTimer() {
         timerJob?.cancel()
-        val currentSeconds = _uiState.value.timeLeftSeconds
-        if (currentSeconds <= 0) {
-            val total = _uiState.value.totalDurationSeconds
-            _uiState.update { it.copy(timeLeftSeconds = total) }
+        var current = _uiState.value.timeLeftSeconds
+        if (current <= 0) {
+            current = _uiState.value.totalDurationSeconds
         }
 
-        targetEndTimeMs = System.currentTimeMillis() + _uiState.value.timeLeftSeconds * 1000L
-        _uiState.update { it.copy(isRunning = true) }
+        targetEndTimeMs = System.currentTimeMillis() + current * 1000L
+        _uiState.update { it.copy(timeLeftSeconds = current, isRunning = true) }
+        persistTimerState(active = true, timeLeft = current)
+        beginTicking()
+    }
 
+    /** Drives the countdown against [targetEndTimeMs] until paused or finished. */
+    private fun beginTicking() {
+        timerJob?.cancel()
+        wakeLock.acquire()
         timerJob = viewModelScope.launch {
-            while (_uiState.value.isRunning) {
-                val now = System.currentTimeMillis()
-                val remainingMs = targetEndTimeMs - now
-                val remainingSec = ((remainingMs + 999) / 1000).toInt()
+            while (isActive && _uiState.value.isRunning) {
+                val remainingMs = targetEndTimeMs - System.currentTimeMillis()
+                // Round, not ceil, to match the web app's
+                // Math.round((endTime - now) / 1000).
+                val remainingSec = Math.round(remainingMs / 1000.0).toInt()
 
                 if (remainingSec <= 0) {
                     _uiState.update { it.copy(timeLeftSeconds = 0, isRunning = false) }
+                    wakeLock.release()
+                    persistTimerState(active = false, timeLeft = 0)
                     handleTimerCompletion()
                     break
                 } else {
                     _uiState.update { it.copy(timeLeftSeconds = remainingSec) }
                 }
-                delay(150)
+                delay(TICK_MS)
             }
         }
     }
@@ -109,15 +161,20 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private fun pauseTimer() {
         timerJob?.cancel()
         timerJob = null
+        wakeLock.release()
+        val remaining = _uiState.value.timeLeftSeconds
         _uiState.update { it.copy(isRunning = false) }
+        persistTimerState(active = false, timeLeft = remaining)
     }
 
     fun resetTimer() {
         hapticHelper.vibrate(HapticType.MEDIUM_CLICK, _uiState.value.settings.hapticsEnabled)
         timerJob?.cancel()
         timerJob = null
+        wakeLock.release()
         val total = _uiState.value.totalDurationSeconds
         _uiState.update { it.copy(isRunning = false, timeLeftSeconds = total) }
+        persistTimerState(active = false, timeLeft = total)
     }
 
     fun skipTimer() {
@@ -137,6 +194,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private fun switchMode(newMode: TimerMode, autoStart: Boolean) {
         timerJob?.cancel()
         timerJob = null
+        wakeLock.release()
+
+        val wasRunning = _uiState.value.isRunning
         val total = calculateDuration(newMode, _uiState.value.preset, _uiState.value.customWorkMinutes, _uiState.value.customBreakMinutes)
 
         _uiState.update {
@@ -152,8 +212,13 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             repository.saveMode(newMode)
         }
 
-        if (autoStart) {
+        // The web app restarts the countdown at the new duration and keeps it
+        // running if it was already running. `autoStart` covers the completion
+        // and skip paths, where the next phase starts regardless.
+        if (wasRunning || autoStart) {
             startTimer()
+        } else {
+            persistTimerState(active = false, timeLeft = total)
         }
     }
 
@@ -173,6 +238,8 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
         timerJob?.cancel()
         timerJob = null
+        wakeLock.release()
+        val wasRunning = _uiState.value.isRunning
         val total = calculateDuration(_uiState.value.mode, newPreset, _uiState.value.customWorkMinutes, _uiState.value.customBreakMinutes)
 
         _uiState.update {
@@ -185,6 +252,14 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             repository.savePreset(newPreset)
+        }
+
+        // Same rule as switchMode: changing the duration mid-session keeps the
+        // countdown running from the new total.
+        if (wasRunning) {
+            startTimer()
+        } else {
+            persistTimerState(active = false, timeLeft = total)
         }
     }
 
@@ -216,6 +291,10 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         if (_uiState.value.preset == TimerPreset.CUSTOM) {
             val total = calculateDuration(_uiState.value.mode, TimerPreset.CUSTOM, nextWork, nextBreak)
             _uiState.update { it.copy(totalDurationSeconds = total, timeLeftSeconds = total) }
+            // Only meaningful while paused; a running timer keeps its deadline.
+            if (!_uiState.value.isRunning) {
+                persistTimerState(active = false, timeLeft = total)
+            }
         }
 
         viewModelScope.launch {
@@ -248,11 +327,17 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // Auto transition after 2.5s delay
-        viewModelScope.launch {
-            delay(2500)
+        // Advance to the next phase. The web app switches immediately and only
+        // if the user has not already changed mode manually (e.g. via skip).
+        if (_uiState.value.mode == completedMode) {
             switchMode(nextMode, autoStart = state.settings.autoStartNext)
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        timerJob?.cancel()
+        wakeLock.release()
     }
 
     fun setSettingsOpen(isOpen: Boolean) {

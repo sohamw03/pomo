@@ -19,7 +19,10 @@ data class AppSettings(
     val soundVolume: Float = 0.8f,
     val hapticsEnabled: Boolean = true,
     val notificationsEnabled: Boolean = false,
-    val autoStartNext: Boolean = false
+    // The web app has no such setting: it always rolls straight into the next
+    // phase. Defaulting to true keeps the ported app behaving the same way out
+    // of the box; the toggle is there to opt out.
+    val autoStartNext: Boolean = true
 )
 
 data class TimerUiState(

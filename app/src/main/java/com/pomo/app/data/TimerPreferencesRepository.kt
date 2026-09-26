@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.pomo.app.model.AppSettings
@@ -31,6 +32,13 @@ class TimerPreferencesRepository(private val context: Context) {
         private val KEY_AUTO_START = booleanPreferencesKey("auto_start")
         private val KEY_STREAK_DATE = stringPreferencesKey("streak_date")
         private val KEY_STREAK_COUNT = intPreferencesKey("streak_count")
+
+        // Running-timer state, mirroring the web app's `pomo_timer_state`
+        // localStorage entry: { modeKey, isActive, timeLeft, endTime }.
+        private val KEY_TIMER_MODE_KEY = stringPreferencesKey("timer_state_mode")
+        private val KEY_TIMER_ACTIVE = booleanPreferencesKey("timer_state_active")
+        private val KEY_TIMER_TIME_LEFT = intPreferencesKey("timer_state_time_left")
+        private val KEY_TIMER_END_TIME = longPreferencesKey("timer_state_end_time")
     }
 
     private fun getTodayDateString(): String {
@@ -47,7 +55,7 @@ class TimerPreferencesRepository(private val context: Context) {
         val soundVolume = prefs[KEY_SOUND_VOLUME] ?: 0.8f
         val hapticsEnabled = prefs[KEY_HAPTICS_ENABLED] ?: true
         val notificationsEnabled = prefs[KEY_NOTIFICATIONS_ENABLED] ?: false
-        val autoStart = prefs[KEY_AUTO_START] ?: false
+        val autoStart = prefs[KEY_AUTO_START] ?: true
 
         val today = getTodayDateString()
         val lastDate = prefs[KEY_STREAK_DATE] ?: today
@@ -65,8 +73,27 @@ class TimerPreferencesRepository(private val context: Context) {
                 notificationsEnabled = notificationsEnabled,
                 autoStartNext = autoStart
             ),
-            completedSessionsToday = streakCount
+            completedSessionsToday = streakCount,
+            timerModeKey = prefs[KEY_TIMER_MODE_KEY],
+            timerActive = prefs[KEY_TIMER_ACTIVE] ?: false,
+            timerTimeLeft = prefs[KEY_TIMER_TIME_LEFT] ?: 0,
+            timerEndTime = prefs[KEY_TIMER_END_TIME] ?: 0L
         )
+    }
+
+    /**
+     * Persist the running timer so a session survives the process being killed.
+     * [endTime] is an absolute wall-clock timestamp; passing 0 means "not
+     * running". Only the transitions are written, never every tick, matching
+     * the web app.
+     */
+    suspend fun saveTimerState(modeKey: String, isActive: Boolean, timeLeft: Int, endTime: Long) {
+        context.dataStore.edit {
+            it[KEY_TIMER_MODE_KEY] = modeKey
+            it[KEY_TIMER_ACTIVE] = isActive
+            it[KEY_TIMER_TIME_LEFT] = timeLeft
+            it[KEY_TIMER_END_TIME] = endTime
+        }
     }
 
     suspend fun savePreset(preset: TimerPreset) {
@@ -121,5 +148,9 @@ data class StoredPreferences(
     val customWork: Int,
     val customBreak: Int,
     val settings: AppSettings,
-    val completedSessionsToday: Int
+    val completedSessionsToday: Int,
+    val timerModeKey: String?,
+    val timerActive: Boolean,
+    val timerTimeLeft: Int,
+    val timerEndTime: Long
 )

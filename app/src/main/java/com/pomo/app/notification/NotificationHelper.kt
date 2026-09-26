@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.pomo.app.MainActivity
 import com.pomo.app.R
 import com.pomo.app.model.TimerMode
@@ -41,6 +42,10 @@ class NotificationHelper(private val context: Context) {
 
     fun showCompletionNotification(completedMode: TimerMode, enabled: Boolean) {
         if (!enabled) return
+        // The user can revoke POST_NOTIFICATIONS from system settings after
+        // granting it, which puts this app in the "don't notify again" state
+        // where notify() silently drops the post.
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
 
         val title = if (completedMode == TimerMode.WORK) {
             context.getString(R.string.focus_complete_title)
