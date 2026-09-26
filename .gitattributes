@@ -1,0 +1,16 @@
+# Normalize line endings so shell scripts stay executable on Linux
+* text=auto
+
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+gradlew text eol=lf
+gradlew.bat text eol=crlf
+
+# Binary files that must never be touched
+*.jar binary
+*.apk binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.keystore binary

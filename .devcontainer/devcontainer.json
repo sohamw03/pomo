@@ -1,0 +1,24 @@
+{
+  "name": "Pomo Android (Kotlin/Compose)",
+  "image": "mcr.microsoft.com/devcontainers/java:17",
+  "containerEnv": {
+    "ANDROID_HOME": "/home/vscode/android-sdk",
+    "ANDROID_SDK_ROOT": "/home/vscode/android-sdk"
+  },
+  "remoteEnv": {
+    "ANDROID_HOME": "/home/vscode/android-sdk",
+    "ANDROID_SDK_ROOT": "/home/vscode/android-sdk",
+    "PATH": "/home/vscode/gradle-8.11.1/bin:${containerEnv:PATH}"
+  },
+  "postCreateCommand": "bash .devcontainer/setup-android.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "fwcd.kotlin"
+      ],
+      "settings": {
+        "kotlin.experimental.buildOutput.useK2": "auto"
+      }
+    }
+  }
+}
