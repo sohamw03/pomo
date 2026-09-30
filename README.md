@@ -9,6 +9,6 @@ phase chimes, wake lock. Installable PWA; native Android port on the
 ## Run
 
 ```sh
-npm install
-npm run dev
+bun install
+bun run dev
 ```
