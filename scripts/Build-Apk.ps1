@@ -38,7 +38,7 @@ function Send-CsFile([string]$cs, [string]$remote, [string]$local) {
   $tmp = "$remote.b64tmp"
   $dir = $remote.Substring(0, $remote.LastIndexOf("/"))
   [void](Invoke-Cs $cs ("mkdir -p " + (Shq $dir) + " && : > " + (Shq $tmp)))
-  $CHUNK = 48 * 1024
+  $CHUNK = 12 * 1024
   for ($i = 0; $i -lt $b64.Length; $i += $CHUNK) {
     $part = $b64.Substring($i, [Math]::Min($CHUNK, $b64.Length - $i))
     [void](Invoke-Cs $cs ("printf '%s' '" + $part + "' >> " + (Shq $tmp)))

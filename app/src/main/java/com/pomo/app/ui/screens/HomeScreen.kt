@@ -1,5 +1,8 @@
 package com.pomo.app.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -20,15 +24,25 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
+import kotlin.math.roundToInt
 import com.pomo.app.R
 import com.pomo.app.model.TimerMode
 import com.pomo.app.model.TimerUiState
@@ -124,44 +138,104 @@ private fun ModeToggle(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Mode toggle: plain track pill with two ripple pills inside, matching
-        // the web's custom toggle (no M3 segmented control, no outline).
+        // Sliding segmented switch, zero-gap by construction:
+        // segments hug their labels, the thumb animates to the selected
+        // segment's measured x + width, so there is exactly one rhythm —
+        // 4.dp outer padding, 0.dp between segments.
         Surface(
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainer
         ) {
-            Row(
-                modifier = Modifier.padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ModePill(
-                    selected = mode == TimerMode.WORK,
-                    label = stringResource(R.string.work_mode),
-                    onClick = { onModeChange(TimerMode.WORK) }
-                )
-                ModePill(
-                    selected = mode == TimerMode.BREAK,
-                    label = stringResource(R.string.break_mode),
-                    onClick = { onModeChange(TimerMode.BREAK) }
-                )
+            var tabX by remember { mutableStateOf(intArrayOf(0, 0)) }
+            var tabW by remember { mutableStateOf(intArrayOf(0, 0)) }
+            // One clock drives both offset and width so they stay in sync
+            // (separate springs finish at different times = rubber-band jank).
+            // Critically damped: glides without overshoot wobble.
+            val progress by animateFloatAsState(
+                targetValue = if (mode == TimerMode.WORK) 0f else 1f,
+                animationSpec = spring(stiffness = 400f, dampingRatio = 1f),
+                label = "modeThumb"
+            )
+            val thumbX = lerp(tabX[0], tabX[1], progress)
+            val thumbWpx = lerp(tabW[0], tabW[1], progress)
+            val density = LocalDensity.current
+            // Three layers, bottom to top:
+            // 1. click + ripple targets (invisible text, same size as labels),
+            // 2. sliding thumb (no input, draws OVER the ripples),
+            // 3. visible labels (no input, clicks pass through).
+            // Per M3 segmented-button guidance the selection indicator covers
+            // the pressed ripple instead of letting it linger on top of it.
+            Box(modifier = Modifier.padding(4.dp)) {
+                Row {
+                    ModeRippleTab(
+                        label = stringResource(R.string.work_mode),
+                        onClick = { onModeChange(TimerMode.WORK) },
+                        onBounds = { x, w ->
+                            if (tabX[0] != x || tabW[0] != w) {
+                                tabX = intArrayOf(x, tabX[1])
+                                tabW = intArrayOf(w, tabW[1])
+                            }
+                        }
+                    )
+                    ModeRippleTab(
+                        label = stringResource(R.string.break_mode),
+                        onClick = { onModeChange(TimerMode.BREAK) },
+                        onBounds = { x, w ->
+                            if (tabX[1] != x || tabW[1] != w) {
+                                tabX = intArrayOf(tabX[0], x)
+                                tabW = intArrayOf(tabW[0], w)
+                            }
+                        }
+                    )
+                }
+                if (thumbWpx > 0) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier
+                            .offset { IntOffset(thumbX, 0) }
+                            .size(
+                                width = with(density) { thumbWpx.toDp() },
+                                height = 36.dp
+                            )
+                    ) {}
+                }
+                Row {
+                    ModeLabel(
+                        selected = mode == TimerMode.WORK,
+                        label = stringResource(R.string.work_mode)
+                    )
+                    ModeLabel(
+                        selected = mode == TimerMode.BREAK,
+                        label = stringResource(R.string.break_mode)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ModePill(
-    selected: Boolean,
+private fun ModeRippleTab(
     label: String,
     onClick: () -> Unit,
+    onBounds: (x: Int, w: Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Invisible text keeps this exactly the same size as the visible label.
+    // Ripple draws here, underneath the thumb that slides over it.
     Surface(
         onClick = onClick,
         shape = CircleShape,
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-        modifier = modifier.height(36.dp)
+        color = Color.Transparent,
+        modifier = modifier
+            .height(36.dp)
+            .onGloballyPositioned {
+                onBounds(
+                    it.positionInParent().x.roundToInt(),
+                    it.size.width
+                )
+            }
     ) {
         Box(
             contentAlignment = Alignment.Center,
@@ -173,13 +247,41 @@ private fun ModePill(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
                 ),
-                color = if (selected) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
+                color = Color.Transparent
             )
         }
+    }
+}
+
+@Composable
+private fun ModeLabel(
+    selected: Boolean,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    // No input handling: clicks pass through to the ripple layer below.
+    val textColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        label = "modeLabel"
+    )
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .height(36.dp)
+            .padding(horizontal = 20.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            ),
+            color = textColor
+        )
     }
 }
 

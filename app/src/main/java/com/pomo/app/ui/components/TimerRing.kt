@@ -5,13 +5,16 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -21,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pomo.app.R
@@ -88,19 +92,51 @@ fun TimerRing(
             }
         }
 
-        // Countdown Text in center
+        // Countdown Text in center. Split around a fixed colon slot so the
+        // colon never moves: equal-weight sides keep it dead center, and
+        // tabular figures keep each side's own width constant as digits flip.
+        val timeParts = remember(timeFormatted) { timeFormatted.split(":") }
+        val minutes = timeParts.getOrElse(0) { "00" }
+        val seconds = timeParts.getOrElse(1) { "00" }
+        val timeStyle = MaterialTheme.typography.displayLarge.copy(
+            fontSize = 62.sp,
+            fontWeight = FontWeight.Light,
+            fontFamily = FontFamily.SansSerif,
+            fontFeatureSettings = "tnum"
+        )
+        val timeColor = MaterialTheme.colorScheme.onSurface
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = timeFormatted,
-                style = MaterialTheme.typography.displayLarge.copy(
-                    fontSize = 62.sp,
-                    fontWeight = FontWeight.Light,
-                    fontFamily = FontFamily.SansSerif
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row(
+                modifier = Modifier.width(260.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = minutes,
+                    style = timeStyle,
+                    color = timeColor,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = ":",
+                    style = timeStyle,
+                    color = timeColor,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    modifier = Modifier.width(28.dp)
+                )
+                Text(
+                    text = seconds,
+                    style = timeStyle,
+                    color = timeColor,
+                    textAlign = TextAlign.Start,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
             Spacer(modifier = Modifier.height(4.dp))
 

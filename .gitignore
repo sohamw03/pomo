@@ -15,6 +15,9 @@ captures/
 # Build output pulled down from the Codespace
 dist/
 
+# Local sound-effect audition files (large, not app source)
+sfx-preview/
+
 # IDE
 .idea/
 *.iml
