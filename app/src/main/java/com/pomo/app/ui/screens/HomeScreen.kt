@@ -78,8 +78,7 @@ fun HomeScreen(
                 TimerRing(
                     mode = uiState.mode,
                     timeFormatted = uiState.timeFormatted,
-                    progress = uiState.progress,
-                    isRunning = uiState.isRunning
+                    progress = uiState.progress
                 )
 
                 Spacer(modifier = Modifier.height(40.dp))

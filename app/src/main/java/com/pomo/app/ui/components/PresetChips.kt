@@ -22,7 +22,7 @@ import com.pomo.app.R
 import com.pomo.app.model.TimerPreset
 
 @Composable
-private fun pomoChipColors(selected: Boolean) = FilterChipDefaults.filterChipColors(
+private fun pomoChipColors() = FilterChipDefaults.filterChipColors(
     containerColor = MaterialTheme.colorScheme.surfaceContainer,
     labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
     iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -58,7 +58,7 @@ fun PresetChips(
             onClick = { onSelectPreset(TimerPreset.P_25_5) },
             label = { Text(stringResource(R.string.preset_25_5)) },
             shape = MaterialTheme.shapes.large,
-            colors = pomoChipColors(selectedPreset == TimerPreset.P_25_5),
+            colors = pomoChipColors(),
             border = pomoChipBorder(selectedPreset == TimerPreset.P_25_5)
         )
 
@@ -67,7 +67,7 @@ fun PresetChips(
             onClick = { onSelectPreset(TimerPreset.P_50_10) },
             label = { Text(stringResource(R.string.preset_50_10)) },
             shape = MaterialTheme.shapes.large,
-            colors = pomoChipColors(selectedPreset == TimerPreset.P_50_10),
+            colors = pomoChipColors(),
             border = pomoChipBorder(selectedPreset == TimerPreset.P_50_10)
         )
 
@@ -83,7 +83,7 @@ fun PresetChips(
             },
             label = { Text("$customWork / $customBreak") },
             shape = MaterialTheme.shapes.large,
-            colors = pomoChipColors(selectedPreset == TimerPreset.CUSTOM),
+            colors = pomoChipColors(),
             border = pomoChipBorder(selectedPreset == TimerPreset.CUSTOM)
         )
     }

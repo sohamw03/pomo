@@ -33,7 +33,6 @@ fun TimerRing(
     mode: TimerMode,
     timeFormatted: String,
     progress: Float,
-    isRunning: Boolean,
     modifier: Modifier = Modifier
 ) {
     val animatedProgress by animateFloatAsState(
