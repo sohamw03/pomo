@@ -1,13 +1,5 @@
 package com.pomo.app.ui.screens
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,8 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RotateLeft
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Icon
@@ -34,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,6 +33,7 @@ import com.pomo.app.R
 import com.pomo.app.model.TimerMode
 import com.pomo.app.model.TimerUiState
 import com.pomo.app.ui.components.CustomDurationPanel
+import com.pomo.app.ui.components.PlayPauseIcon
 import com.pomo.app.ui.components.PresetChips
 import com.pomo.app.ui.components.TimerRing
 import com.pomo.app.viewmodel.TimerViewModel
@@ -225,6 +218,9 @@ private fun TimerControlsSection(
         }
 
         // Hero Play / Pause Button
+        val playPauseDesc = stringResource(
+            if (isRunning) R.string.pause_timer else R.string.play_timer
+        )
         Surface(
             onClick = onTogglePlayPause,
             shape = CircleShape,
@@ -234,27 +230,17 @@ private fun TimerControlsSection(
         ) {
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .semantics {
+                        contentDescription = playPauseDesc
+                    }
             ) {
-                AnimatedContent(
-                    targetState = isRunning,
-                    transitionSpec = {
-                        (fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
-                            scaleIn(spring(stiffness = Spring.StiffnessMedium))) togetherWith
-                            (fadeOut(spring(stiffness = Spring.StiffnessMedium)) +
-                                scaleOut(spring(stiffness = Spring.StiffnessMedium)))
-                    },
-                    label = "playPauseIcon"
-                ) { running ->
-                    Icon(
-                        imageVector = if (running) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = stringResource(
-                            if (running) R.string.pause_timer else R.string.play_timer
-                        ),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(48.dp)
-                    )
-                }
+                PlayPauseIcon(
+                    isRunning = isRunning,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(48.dp)
+                )
             }
         }
 
