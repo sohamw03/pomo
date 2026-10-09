@@ -1,6 +1,7 @@
 package com.pomo.app.viewmodel
 
 import android.app.Application
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.pomo.app.audio.AudioSynthesizer
@@ -36,9 +37,21 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<TimerUiState> = _uiState.asStateFlow()
 
     private var timerJob: Job? = null
-    private var targetEndTimeMs: Long = 0L
+    /**
+     * Monotonic deadline while running (elapsedRealtime base, immune to wall-clock
+     * jumps). Display is derived from it every tick: ceil(remainingMs / 1000), so
+     * each displayed second lasts exactly 1000ms.
+     */
+    private var targetEndElapsedMs: Long = 0L
+    /** Wall-clock deadline, persisted only so a killed session can be restored. */
+    private var targetEndWallMs: Long = 0L
+    /** Exact ms remaining at pause/init. Source of truth for resume (no rounding loss). */
+    private var remainingMsExact: Long = 0L
     private val wakeLock = TimerWakeLock(application)
     private var completionJob: Job? = null
+
+    private fun ceilSeconds(remainingMs: Long): Int =
+        if (remainingMs <= 0L) 0 else ((remainingMs + 999L) / 1000L).toInt()
 
     init {
         viewModelScope.launch {
@@ -49,20 +62,30 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             // restored when it belongs to the mode currently in effect.
             var timeLeft = totalSeconds
             var running = false
-            var endTime = 0L
+            var remainingMs = totalSeconds * 1000L
+            var endWall = 0L
             if (initial.timerModeKey != null && initial.timerModeKey == initial.mode.name) {
                 if (initial.timerActive && initial.timerEndTime > 0L) {
-                    val remaining = Math.round(
-                        (initial.timerEndTime - System.currentTimeMillis()) / 1000.0
-                    ).toInt()
-                    timeLeft = maxOf(0, remaining)
-                    running = true
-                    endTime = initial.timerEndTime
-                } else {
-                    timeLeft = initial.timerTimeLeft
+                    // Resume against the original wall-clock deadline (the only
+                    // thing that survives process death), then re-anchor a
+                    // monotonic deadline from it.
+                    remainingMs = maxOf(0L, initial.timerEndTime - System.currentTimeMillis())
+                    timeLeft = ceilSeconds(remainingMs)
+                    running = remainingMs > 0L
+                    endWall = if (running) initial.timerEndTime else 0L
+                    if (!running) remainingMs = 0L
+                } else if (!initial.timerActive) {
+                    remainingMs = if (initial.timerRemainingMs >= 0L) {
+                        initial.timerRemainingMs
+                    } else {
+                        // Migration from pre-remainingMs saves (rounded seconds only).
+                        maxOf(0, initial.timerTimeLeft) * 1000L
+                    }
+                    timeLeft = ceilSeconds(remainingMs)
                 }
             }
 
+            remainingMsExact = remainingMs
             _uiState.update {
                 it.copy(
                     mode = initial.mode,
@@ -76,20 +99,21 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             if (running) {
-                // Resume against the original deadline rather than restarting,
+                // Re-anchor monotonic + wall deadlines from the restored position
                 // so a session that was killed 20 minutes in still ends on time.
-                targetEndTimeMs = endTime
+                targetEndElapsedMs = SystemClock.elapsedRealtime() + remainingMs
+                targetEndWallMs = endWall
                 beginTicking()
             }
         }
     }
 
-    /** Persist the running timer. Only called on transitions, never per tick. */
-    private fun persistTimerState(active: Boolean, timeLeft: Int) {
+    /** Persist the timer. Only called on transitions, never per tick. */
+    private fun persistTimerState(active: Boolean, timeLeft: Int, remainingMs: Long) {
         val modeKey = _uiState.value.mode.name
-        val endTime = if (active) targetEndTimeMs else 0L
+        val endTime = if (active) targetEndWallMs else 0L
         viewModelScope.launch {
-            repository.saveTimerState(modeKey, active, timeLeft, endTime)
+            repository.saveTimerState(modeKey, active, timeLeft, remainingMs, endTime)
         }
     }
 
@@ -118,33 +142,44 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
     private fun startTimer() {
         timerJob?.cancel()
         var current = _uiState.value.timeLeftSeconds
-        if (current <= 0) {
-            current = _uiState.value.totalDurationSeconds
+        var remainingMs = remainingMsExact
+        // Fresh start (or finished 0:00): use the full duration.
+        // Otherwise resume from the exact paused position, not the rounded display value.
+        if (current <= 0 || remainingMs <= 0L || ceilSeconds(remainingMs) != current) {
+            if (current <= 0 || remainingMs <= 0L) {
+                current = _uiState.value.totalDurationSeconds
+                remainingMs = current * 1000L
+            } else {
+                // Display was changed while paused (e.g. duration edited):
+                // remainingMsExact was already synced by the editor path.
+                remainingMs = remainingMsExact
+            }
         }
 
-        targetEndTimeMs = System.currentTimeMillis() + current * 1000L
-        _uiState.update { it.copy(timeLeftSeconds = current, isRunning = true) }
-        persistTimerState(active = true, timeLeft = current)
+        remainingMsExact = remainingMs
+        targetEndElapsedMs = SystemClock.elapsedRealtime() + remainingMs
+        targetEndWallMs = System.currentTimeMillis() + remainingMs
+        _uiState.update { it.copy(timeLeftSeconds = ceilSeconds(remainingMs), isRunning = true) }
+        persistTimerState(active = true, timeLeft = ceilSeconds(remainingMs), remainingMs = remainingMs)
         beginTicking()
     }
 
-    /** Drives the countdown against [targetEndTimeMs] until paused or finished. */
+    /** Drives the countdown against [targetEndElapsedMs] until paused or finished. */
     private fun beginTicking() {
         timerJob?.cancel()
         wakeLock.acquire()
         timerJob = viewModelScope.launch {
             while (isActive && _uiState.value.isRunning) {
-                val remainingMs = targetEndTimeMs - System.currentTimeMillis()
-                // Round, not ceil, to match the web app's
-                // Math.round((endTime - now) / 1000).
-                val remainingSec = Math.round(remainingMs / 1000.0).toInt()
+                val remainingMs = targetEndElapsedMs - SystemClock.elapsedRealtime()
+                val remainingSec = ceilSeconds(remainingMs)
 
                 if (remainingSec <= 0) {
                     // Stay "running" through the completion pause so the UI
                     // shows 0:00 with the pause affordance, exactly like the
                     // web app (isActive stays true during its 2.5s delay).
+                    remainingMsExact = 0L
                     _uiState.update { it.copy(timeLeftSeconds = 0) }
-                    persistTimerState(active = true, timeLeft = 0)
+                    persistTimerState(active = true, timeLeft = 0, remainingMs = 0L)
                     handleTimerCompletion()
                     break
                 } else {
@@ -159,9 +194,13 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         timerJob?.cancel()
         timerJob = null
         wakeLock.release()
-        val remaining = _uiState.value.timeLeftSeconds
-        _uiState.update { it.copy(isRunning = false) }
-        persistTimerState(active = false, timeLeft = remaining)
+        val remainingMs = maxOf(0L, targetEndElapsedMs - SystemClock.elapsedRealtime())
+        remainingMsExact = remainingMs
+        val secs = ceilSeconds(remainingMs)
+        targetEndElapsedMs = 0L
+        targetEndWallMs = 0L
+        _uiState.update { it.copy(isRunning = false, timeLeftSeconds = secs) }
+        persistTimerState(active = false, timeLeft = secs, remainingMs = remainingMs)
     }
 
     fun resetTimer() {
@@ -169,8 +208,11 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         timerJob = null
         wakeLock.release()
         val total = _uiState.value.totalDurationSeconds
+        remainingMsExact = total * 1000L
+        targetEndElapsedMs = 0L
+        targetEndWallMs = 0L
         _uiState.update { it.copy(isRunning = false, timeLeftSeconds = total) }
-        persistTimerState(active = false, timeLeft = total)
+        persistTimerState(active = false, timeLeft = total, remainingMs = remainingMsExact)
     }
 
     fun skipTimer() {
@@ -195,6 +237,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         // app never clearing its setTimeout.
         val total = calculateDuration(newMode, _uiState.value.preset, _uiState.value.customWorkMinutes, _uiState.value.customBreakMinutes)
 
+        remainingMsExact = total * 1000L
+        targetEndElapsedMs = 0L
+        targetEndWallMs = 0L
         _uiState.update {
             it.copy(
                 mode = newMode,
@@ -214,7 +259,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         if (autoStart) {
             startTimer()
         } else {
-            persistTimerState(active = false, timeLeft = total)
+            persistTimerState(active = false, timeLeft = total, remainingMs = remainingMsExact)
         }
     }
 
@@ -235,6 +280,9 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         wakeLock.release()
         val total = calculateDuration(_uiState.value.mode, newPreset, _uiState.value.customWorkMinutes, _uiState.value.customBreakMinutes)
 
+        remainingMsExact = total * 1000L
+        targetEndElapsedMs = 0L
+        targetEndWallMs = 0L
         _uiState.update {
             it.copy(
                 totalDurationSeconds = total,
@@ -249,7 +297,7 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
 
         // Manual preset changes always stop, because the web app's
         // handlePresetChange goes through resetTimer.
-        persistTimerState(active = false, timeLeft = total)
+        persistTimerState(active = false, timeLeft = total, remainingMs = remainingMsExact)
     }
 
     fun adjustCustomWork(delta: Int) {
@@ -278,14 +326,19 @@ class TimerViewModel(application: Application) : AndroidViewModel(application) {
         if (_uiState.value.preset == TimerPreset.CUSTOM) {
             val total = calculateDuration(_uiState.value.mode, TimerPreset.CUSTOM, nextWork, nextBreak)
             if (_uiState.value.isRunning) {
-                // The web app's layout effect restarts a running countdown at
-                // the new duration, so re-anchor the deadline instead of
-                // keeping the old one.
+                // Restart the running countdown at the new duration with exact ms.
+                remainingMsExact = total * 1000L
+                targetEndElapsedMs = SystemClock.elapsedRealtime() + remainingMsExact
+                targetEndWallMs = System.currentTimeMillis() + remainingMsExact
                 _uiState.update { it.copy(totalDurationSeconds = total, timeLeftSeconds = total) }
-                startTimer()
+                persistTimerState(active = true, timeLeft = total, remainingMs = remainingMsExact)
+                beginTicking()
             } else {
+                remainingMsExact = total * 1000L
+                targetEndElapsedMs = 0L
+                targetEndWallMs = 0L
                 _uiState.update { it.copy(totalDurationSeconds = total, timeLeftSeconds = total) }
-                persistTimerState(active = false, timeLeft = total)
+                persistTimerState(active = false, timeLeft = total, remainingMs = remainingMsExact)
             }
         }
 

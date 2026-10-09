@@ -22,11 +22,12 @@ class TimerPreferencesRepository(private val context: Context) {
         private val KEY_CUSTOM_BREAK = intPreferencesKey("custom_break")
 
         // Running-timer state, mirroring the web app's `pomo_timer_state`
-        // localStorage entry: { modeKey, isActive, timeLeft, endTime }.
+        // localStorage entry: { modeKey, isActive, timeLeft, remainingMs, endTime }.
         private val KEY_TIMER_MODE_KEY = stringPreferencesKey("timer_state_mode")
         private val KEY_TIMER_ACTIVE = booleanPreferencesKey("timer_state_active")
         private val KEY_TIMER_TIME_LEFT = intPreferencesKey("timer_state_time_left")
         private val KEY_TIMER_END_TIME = longPreferencesKey("timer_state_end_time")
+        private val KEY_TIMER_REMAINING_MS = longPreferencesKey("timer_state_remaining_ms")
     }
 
     val preferencesFlow: Flow<StoredPreferences> = context.dataStore.data.map { prefs ->
@@ -43,21 +44,24 @@ class TimerPreferencesRepository(private val context: Context) {
             timerModeKey = prefs[KEY_TIMER_MODE_KEY],
             timerActive = prefs[KEY_TIMER_ACTIVE] ?: false,
             timerTimeLeft = prefs[KEY_TIMER_TIME_LEFT] ?: 0,
-            timerEndTime = prefs[KEY_TIMER_END_TIME] ?: 0L
+            timerEndTime = prefs[KEY_TIMER_END_TIME] ?: 0L,
+            timerRemainingMs = prefs[KEY_TIMER_REMAINING_MS] ?: -1L
         )
     }
 
     /**
      * Persist the running timer so a session survives the process being killed.
-     * [endTime] is an absolute wall-clock timestamp; passing 0 means "not
-     * running". Only the transitions are written, never every tick, matching
-     * the web app.
+     * [remainingMs] is the exact ms left (source of truth for resume, no rounding
+     * loss). [endTime] is an absolute wall-clock timestamp for active sessions so
+     * a killed-while-running timer can be restored; passing 0 means "not running".
+     * Only the transitions are written, never every tick, matching the web app.
      */
-    suspend fun saveTimerState(modeKey: String, isActive: Boolean, timeLeft: Int, endTime: Long) {
+    suspend fun saveTimerState(modeKey: String, isActive: Boolean, timeLeft: Int, remainingMs: Long, endTime: Long) {
         context.dataStore.edit {
             it[KEY_TIMER_MODE_KEY] = modeKey
             it[KEY_TIMER_ACTIVE] = isActive
             it[KEY_TIMER_TIME_LEFT] = timeLeft
+            it[KEY_TIMER_REMAINING_MS] = remainingMs
             it[KEY_TIMER_END_TIME] = endTime
         }
     }
@@ -86,5 +90,6 @@ data class StoredPreferences(
     val timerModeKey: String?,
     val timerActive: Boolean,
     val timerTimeLeft: Int,
-    val timerEndTime: Long
+    val timerEndTime: Long,
+    val timerRemainingMs: Long
 )
