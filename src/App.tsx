@@ -1,11 +1,26 @@
 import React, { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
-import { RotateCcw, Settings2, SkipForward, Minus, Plus } from 'lucide-react';
+import { RotateCcw, Settings2, SkipForward, Minus, Plus, X } from 'lucide-react';
 import { motion, animate, useMotionValue, useTransform, useReducedMotion } from 'motion/react';
 import '@material/web/ripple/ripple.js';
 import { useTimer } from './useTimer';
 
 type Preset = '25/5' | '50/10' | 'custom';
 type Mode = 'work' | 'break';
+
+const SHORTCUTS: Array<{ keys: string; action: string }> = [
+  { keys: 'Space / K', action: 'Play / pause' },
+  { keys: 'R', action: 'Reset' },
+  { keys: 'S / N', action: 'Skip phase' },
+  { keys: '1', action: 'Preset 25 / 5' },
+  { keys: '2', action: 'Preset 50 / 10' },
+  { keys: '3 / C', action: 'Custom preset' },
+  { keys: 'W', action: 'Work mode' },
+  { keys: 'B', action: 'Break mode' },
+  { keys: 'M', action: 'Toggle mode' },
+  { keys: 'F', action: 'Fullscreen' },
+  { keys: 'Esc', action: 'Close / collapse' },
+  { keys: '?', action: 'This panel' },
+];
 
 const beepAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
 
@@ -373,6 +388,7 @@ export default function App() {
     return saved ? parseInt(saved, 10) : 5;
   });
   const [isCustomExpanded, setIsCustomExpanded] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('pomo_preset', preset);
@@ -543,7 +559,7 @@ export default function App() {
     }
   };
 
-  // Hidden keybinds (intentionally undiscoverable: no UI hints).
+  // Keybinds stay hidden; the overlay below is the only surface, opened by ?.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -554,6 +570,11 @@ export default function App() {
       // Let focused buttons keep native Space/Enter activation.
       if (t && t.tagName === 'BUTTON' && (e.code === 'Space' || e.code === 'Enter')) return;
       if (e.repeat) return;
+      if (e.key === '?') {
+        setShowShortcuts((v) => !v);
+        return;
+      }
+      if (showShortcuts) return;
       switch (e.code) {
         case 'Space':
           e.preventDefault();
@@ -592,7 +613,8 @@ export default function App() {
           toggleFullscreenMode();
           break;
         case 'Escape':
-          if (isCustomExpanded) setIsCustomExpanded(false);
+          if (showShortcuts) setShowShortcuts(false);
+          else if (isCustomExpanded) setIsCustomExpanded(false);
           break;
         default:
           return;
@@ -868,6 +890,43 @@ export default function App() {
         </div>
       </div>
       </div>
+
+      {showShortcuts && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+          onClick={() => setShowShortcuts(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Keyboard shortcuts"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm max-h-[80vh] overflow-y-auto bg-white dark:bg-stone-900 rounded-[28px] p-6 shadow-xl border border-stone-100 dark:border-stone-800"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold tracking-tight">Shortcuts</h2>
+              <RippleMotionButton
+                onClick={() => setShowShortcuts(false)}
+                autoFocus
+                aria-label="Close shortcuts"
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-stone-100 text-stone-600 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700 cursor-pointer select-none touch-manipulation"
+              >
+                <X size={18} aria-hidden="true" />
+              </RippleMotionButton>
+            </div>
+            <ul className="flex flex-col gap-2.5">
+              {SHORTCUTS.map((s) => (
+                <li key={s.keys + s.action} className="flex items-center justify-between gap-4 text-sm">
+                  <span className="text-stone-600 dark:text-stone-300">{s.action}</span>
+                  <kbd className="px-2 py-0.5 rounded-md bg-stone-100 dark:bg-stone-800 text-xs font-semibold tabular-nums whitespace-nowrap">
+                    {s.keys}
+                  </kbd>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
 
     </div>
   );
