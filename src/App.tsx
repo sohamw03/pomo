@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { RotateCcw, Settings2, SkipForward, Minus, Plus } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, animate, useMotionValue, useTransform, useReducedMotion } from 'motion/react';
 import '@material/web/ripple/ripple.js';
 import { useTimer } from './useTimer';
 
@@ -187,6 +187,170 @@ function RippleMotionButton({ children, className, disabled, ...props }: RippleM
       })}
       {children}
     </motion.button>
+  );
+}
+
+// 1:1 port of Android HomeScreen ModeToggle.
+// Zero-gap segments, one spring clock driving x + width (no rubber-band),
+// critically damped glide, ripple layer UNDER the sliding thumb per M3
+// segmented-button guidance. Trends applied: ResizeObserver + fonts.ready
+// re-measure, transform-only thumb motion, prefers-reduced-motion jump.
+function ModeToggle({
+  mode,
+  onModeChange,
+  isWork,
+  thumbBg,
+  selectedText,
+}: {
+  mode: Mode;
+  onModeChange: (m: Mode) => void;
+  isWork: boolean;
+  thumbBg: string;
+  selectedText: string;
+}) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const workBtnRef = useRef<HTMLButtonElement>(null);
+  const breakBtnRef = useRef<HTMLButtonElement>(null);
+  const [tabs, setTabs] = useState({ x: [0, 0], w: [0, 0] });
+  const reduceMotion = useReducedMotion();
+  const progress = useMotionValue(mode === 'work' ? 0 : 1);
+
+  useEffect(() => {
+    const target = mode === 'work' ? 0 : 1;
+    if (reduceMotion) {
+      progress.jump(target);
+      return;
+    }
+    const controls = animate(progress, target, {
+      type: 'spring',
+      stiffness: 400,
+      damping: 40,
+    });
+    return () => controls.stop();
+  }, [mode, progress, reduceMotion]);
+
+  const measure = useCallback(() => {
+    const box = boxRef.current;
+    const wBtn = workBtnRef.current;
+    const bBtn = breakBtnRef.current;
+    if (!box || !wBtn || !bBtn) return;
+    const boxRect = box.getBoundingClientRect();
+    const wRect = wBtn.getBoundingClientRect();
+    const bRect = bBtn.getBoundingClientRect();
+    const nx = [wRect.left - boxRect.left, bRect.left - boxRect.left];
+    const nw = [wRect.width, bRect.width];
+    setTabs((prev) => {
+      if (prev.x[0] === nx[0] && prev.x[1] === nx[1] && prev.w[0] === nw[0] && prev.w[1] === nw[1]) return prev;
+      return { x: nx, w: nw };
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (boxRef.current) ro.observe(boxRef.current);
+    if (workBtnRef.current) ro.observe(workBtnRef.current);
+    if (breakBtnRef.current) ro.observe(breakBtnRef.current);
+    window.addEventListener('resize', measure);
+    let fonts: Promise<unknown> | undefined;
+    try {
+      fonts = (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
+      fonts?.then(() => measure()).catch(() => {});
+    } catch {}
+    const raf = requestAnimationFrame(measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+      cancelAnimationFrame(raf);
+    };
+  }, [measure]);
+
+  const thumbX = useTransform(progress, [0, 1], [tabs.x[0], tabs.x[1]]);
+  const thumbW = useTransform(progress, [0, 1], [tabs.w[0], tabs.w[1]]);
+  const measured = tabs.w[0] > 0 && tabs.w[1] > 0;
+
+  const handleKeys = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      onModeChange(e.key === 'ArrowLeft' ? 'work' : 'break');
+    }
+  };
+
+  const rippleTabClass =
+    'h-9 px-5 rounded-full text-sm font-semibold select-none touch-manipulation relative overflow-hidden cursor-pointer text-stone-500 dark:text-stone-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-400';
+  const labelCellClass =
+    'h-9 px-5 flex items-center justify-center rounded-full text-sm font-semibold whitespace-nowrap';
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Timer mode"
+      onKeyDown={handleKeys}
+      className="bg-stone-200/70 dark:bg-stone-800/70 p-1 rounded-full"
+    >
+      <div ref={boxRef} className="relative">
+        {/* Layer 1: click + ripple targets (invisible text, same size as labels) */}
+        <div className="flex gap-0 relative z-0">
+          <button
+            ref={workBtnRef}
+            type="button"
+            role="radio"
+            aria-checked={isWork}
+            aria-label="Work"
+            onClick={() => onModeChange('work')}
+            className={rippleTabClass}
+          >
+            {React.createElement('md-ripple', {
+              'aria-hidden': true,
+              style: {
+                '--md-ripple-hover-color': 'currentColor',
+                '--md-ripple-pressed-color': 'currentColor',
+              } as React.CSSProperties,
+            })}
+            <span aria-hidden="true" className="text-transparent">Work</span>
+          </button>
+          <button
+            ref={breakBtnRef}
+            type="button"
+            role="radio"
+            aria-checked={!isWork}
+            aria-label="Break"
+            onClick={() => onModeChange('break')}
+            className={rippleTabClass}
+          >
+            {React.createElement('md-ripple', {
+              'aria-hidden': true,
+              style: {
+                '--md-ripple-hover-color': 'currentColor',
+                '--md-ripple-pressed-color': 'currentColor',
+              } as React.CSSProperties,
+            })}
+            <span aria-hidden="true" className="text-transparent">Break</span>
+          </button>
+        </div>
+        {/* Layer 2: sliding thumb, no input, draws OVER the ripples */}
+        {measured && (
+          <motion.div
+            aria-hidden="true"
+            className={`pointer-events-none absolute top-0 bottom-0 left-0 rounded-full z-[1] transition-colors duration-200 ${thumbBg}`}
+            style={{ x: thumbX, width: thumbW }}
+          />
+        )}
+        {/* Layer 3: visible labels, no input, clicks pass through */}
+        <div aria-hidden="true" className="absolute inset-0 flex gap-0 z-[2] pointer-events-none">
+          <div className={labelCellClass}>
+            <span className={`transition-colors duration-200 ${isWork ? selectedText : 'text-stone-500 dark:text-stone-400'}`}>
+              Work
+            </span>
+          </div>
+          <div className={labelCellClass}>
+            <span className={`transition-colors duration-200 ${!isWork ? selectedText : 'text-stone-500 dark:text-stone-400'}`}>
+              Break
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -379,13 +543,73 @@ export default function App() {
     }
   };
 
+  // Hidden keybinds (intentionally undiscoverable: no UI hints).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target instanceof HTMLElement ? e.target : null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
+        if (e.code !== 'Escape') return;
+      }
+      // Let focused buttons keep native Space/Enter activation.
+      if (t && t.tagName === 'BUTTON' && (e.code === 'Space' || e.code === 'Enter')) return;
+      if (e.repeat) return;
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          handlePlayPause();
+          break;
+        case 'KeyK':
+          handlePlayPause();
+          break;
+        case 'KeyR':
+          handleReset();
+          break;
+        case 'KeyS':
+        case 'KeyN':
+          handleSkip();
+          break;
+        case 'Digit1':
+          handlePresetChange('25/5');
+          break;
+        case 'Digit2':
+          handlePresetChange('50/10');
+          break;
+        case 'Digit3':
+        case 'KeyC':
+          handlePresetChange('custom');
+          break;
+        case 'KeyW':
+          handleModeChange('work');
+          break;
+        case 'KeyB':
+          handleModeChange('break');
+          break;
+        case 'KeyM':
+          handleModeChange(mode === 'work' ? 'break' : 'work');
+          break;
+        case 'KeyF':
+          toggleFullscreenMode();
+          break;
+        case 'Escape':
+          if (isCustomExpanded) setIsCustomExpanded(false);
+          break;
+        default:
+          return;
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
   // M3 Theme Colors
   const isWork = mode === 'work';
   const primaryRingColor = isWork ? 'text-[#ffdcc2] dark:text-[#6a3900]' : 'text-[#f9e287] dark:text-[#534600]';
   const primaryBg = isWork ? 'bg-[#ffdcc2] dark:bg-[#6a3900]' : 'bg-[#f9e287] dark:bg-[#534600]';
-  const primaryContainer = isWork ? 'bg-[#ffdcc2] text-[#2d1600] dark:bg-[#6a3900] dark:text-[#ffdcc2]' : 'bg-[#f9e287] text-[#221b00] dark:bg-[#534600] dark:text-[#f9e287]';
   const primaryOnColor = isWork ? 'text-[#2d1600] dark:text-[#ffdcc2]' : 'text-[#221b00] dark:text-[#f9e287]';
   const primaryFocus = isWork ? 'focus:border-[#c47732] dark:focus:border-[#ffb77d]' : 'focus:border-[#c6a900] dark:focus:border-[#e9c400]';
+  const thumbBg = isWork ? 'bg-[#ffdcc2] dark:bg-[#6a3900]' : 'bg-[#f9e287] dark:bg-[#534600]';
+  const selectedText = isWork ? 'text-[#2d1600] dark:text-[#ffdcc2]' : 'text-[#221b00] dark:text-[#f9e287]';
 
   const progressPercent = timeLeft / currentDuration;
   const radius = 180;
@@ -419,20 +643,13 @@ export default function App() {
         >
           Pomo
         </h1>
-        <div className="flex gap-1 bg-stone-200/70 dark:bg-stone-800/70 p-1 rounded-full">
-            <RippleMotionButton
-                onClick={() => handleModeChange('work')}
-                className={`px-5 py-1.5 rounded-full text-sm font-semibold transition-colors cursor-pointer select-none touch-manipulation ${isWork ? primaryContainer : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
-            >
-                Work
-            </RippleMotionButton>
-            <RippleMotionButton
-                onClick={() => handleModeChange('break')}
-                className={`px-5 py-1.5 rounded-full text-sm font-semibold transition-colors cursor-pointer select-none touch-manipulation ${!isWork ? primaryContainer : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
-            >
-                Break
-            </RippleMotionButton>
-        </div>
+        <ModeToggle
+          mode={mode}
+          onModeChange={handleModeChange}
+          isWork={isWork}
+          thumbBg={thumbBg}
+          selectedText={selectedText}
+        />
       </div>
 
       {/* Main Centered Area */}
