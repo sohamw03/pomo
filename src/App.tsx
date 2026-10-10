@@ -10,7 +10,8 @@ type Mode = 'work' | 'break';
 const SHORTCUTS: Array<{ keys: string; action: string }> = [
   { keys: 'Space / K', action: 'Play / pause' },
   { keys: 'R', action: 'Reset' },
-  { keys: 'S / N', action: 'Skip phase' },
+  { keys: 'Tab / S / N', action: 'Skip phase' },
+  { keys: 'Tab / Enter', action: 'Cycle / close custom fields' },
   { keys: '1', action: 'Preset 25 / 5' },
   { keys: '2', action: 'Preset 50 / 10' },
   { keys: '3 / C', action: 'Custom preset' },
@@ -501,6 +502,8 @@ export default function App() {
 
   // Fullscreen long-press handler for "Pomo" title
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const workInputRef = useRef<HTMLInputElement>(null);
+  const breakInputRef = useRef<HTMLInputElement>(null);
 
   const getIsFullscreen = () => {
     return !!(
@@ -564,17 +567,61 @@ export default function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target instanceof HTMLElement ? e.target : null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
+      const inCustomInput =
+        t === workInputRef.current || t === breakInputRef.current;
+      if (
+        t &&
+        !inCustomInput &&
+        (t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          t.tagName === 'SELECT' ||
+          t.isContentEditable)
+      ) {
         if (e.code !== 'Escape') return;
       }
       // Let focused buttons keep native Space/Enter activation.
       if (t && t.tagName === 'BUTTON' && (e.code === 'Space' || e.code === 'Enter')) return;
       if (e.repeat) return;
       if (e.key === '?') {
+        if (inCustomInput) return;
         setShowShortcuts((v) => !v);
         return;
       }
+      // Esc always wins: close overlay first, else collapse custom.
+      // (Handled before the overlay early-return so Esc can exit it.)
+      if (e.code === 'Escape') {
+        if (showShortcuts) setShowShortcuts(false);
+        else if (isCustomExpanded) {
+          setIsCustomExpanded(false);
+          if (inCustomInput) (document.activeElement as HTMLElement | null)?.blur?.();
+        }
+        return;
+      }
       if (showShortcuts) return;
+      // Custom trap: while expanded, Tab stays between the two inputs
+      // (first Tab enters when focus is elsewhere), Enter closes.
+      if (isCustomExpanded) {
+        if (inCustomInput) {
+          if (e.code === 'Tab') {
+            e.preventDefault();
+            const next =
+              t === workInputRef.current ? breakInputRef.current : workInputRef.current;
+            next?.focus();
+            return;
+          }
+          if (e.code === 'Enter') {
+            setIsCustomExpanded(false);
+            (document.activeElement as HTMLElement | null)?.blur?.();
+            return;
+          }
+          return;
+        }
+        if (e.code === 'Tab' && workInputRef.current) {
+          e.preventDefault();
+          workInputRef.current.focus();
+          return;
+        }
+      }
       switch (e.code) {
         case 'Space':
           e.preventDefault();
@@ -586,8 +633,10 @@ export default function App() {
         case 'KeyR':
           handleReset();
           break;
+        case 'Tab':
         case 'KeyS':
         case 'KeyN':
+          e.preventDefault();
           handleSkip();
           break;
         case 'Digit1':
@@ -611,10 +660,6 @@ export default function App() {
           break;
         case 'KeyF':
           toggleFullscreenMode();
-          break;
-        case 'Escape':
-          if (showShortcuts) setShowShortcuts(false);
-          else if (isCustomExpanded) setIsCustomExpanded(false);
           break;
         default:
           return;
@@ -822,6 +867,7 @@ export default function App() {
                         type="text" 
                         inputMode="numeric" 
                         pattern="[0-9]*"
+                        ref={workInputRef}
                         value={customWork}
                         onChange={(e) => {
                             const val = e.target.value;
@@ -863,6 +909,7 @@ export default function App() {
                         type="text" 
                         inputMode="numeric" 
                         pattern="[0-9]*"
+                        ref={breakInputRef}
                         value={customBreak}
                         onChange={(e) => {
                             const val = e.target.value;
